@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import type { IUniverSheetsConditionalFormattingUIConfig } from './controllers/config.schema';
+import type { IUniverSheetsConditionalFormattingUIConfig } from './config/config';
 import {
     DependentOn,
     ICommandService,
@@ -27,36 +27,49 @@ import {
     touchDependencies,
     UniverInstanceType,
 } from '@univerjs/core';
+import { UniverRenderEnginePlugin } from '@univerjs/engine-render';
+import { UniverSheetsPlugin } from '@univerjs/sheets';
 import { SHEET_CONDITIONAL_FORMATTING_PLUGIN, UniverSheetsConditionalFormattingPlugin } from '@univerjs/sheets-conditional-formatting';
 import { UniverSheetsFormulaPlugin } from '@univerjs/sheets-formula';
+import { UniverSheetsUIPlugin } from '@univerjs/sheets-ui';
+import pkg from '../package.json';
 import { AddAverageCfCommand } from './commands/commands/add-average-cf.command';
 import { AddColorScaleConditionalRuleCommand } from './commands/commands/add-color-scale-cf.command';
 import { AddDataBarConditionalRuleCommand } from './commands/commands/add-data-bar-cf.command';
 import { AddDuplicateValuesCfCommand } from './commands/commands/add-duplicate-values-cf.command';
+import { AddIconSetConditionalRuleCommand } from './commands/commands/add-icon-set-cf.command';
 import { AddNumberCfCommand } from './commands/commands/add-number-cf.command';
 import { AddRankCfCommand } from './commands/commands/add-rank-cf.command';
 import { AddTextCfCommand } from './commands/commands/add-text-cf.command';
 import { AddTimePeriodCfCommand } from './commands/commands/add-time-period-cf.command';
-
 import { AddUniqueValuesCfCommand } from './commands/commands/add-unique-values-cf.command';
 import { OpenConditionalFormattingOperator } from './commands/operations/open-conditional-formatting-panel';
+import { defaultPluginConfig, SHEETS_CONDITIONAL_FORMATTING_UI_PLUGIN_CONFIG_KEY } from './config/config';
 import { ConditionalFormattingFormulaRefRangeController } from './controllers/cf-formula-ref-range.controller';
 import { ConditionalFormattingAutoFillController } from './controllers/cf.auto-fill.controller';
 import { ConditionalFormattingClearController } from './controllers/cf.clear.controller';
 import { ConditionalFormattingCopyPasteController } from './controllers/cf.copy-paste.controller';
 import { ConditionalFormattingEditorController } from './controllers/cf.editor.controller';
 import { ConditionalFormattingI18nController } from './controllers/cf.i18n.controller';
-import { ConditionalFormattingMenuController } from './controllers/cf.menu.controller';
 import { ConditionalFormattingPainterController } from './controllers/cf.painter.controller';
 import { ConditionalFormattingPanelController } from './controllers/cf.panel.controller';
 import { ConditionalFormattingPermissionController } from './controllers/cf.permission.controller';
 import { SheetsCfRenderController } from './controllers/cf.render.controller';
 import { ConditionalFormattingViewportController } from './controllers/cf.viewport.controller';
-import { defaultPluginConfig, SHEETS_CONDITIONAL_FORMATTING_UI_PLUGIN_CONFIG_KEY } from './controllers/config.schema';
+import { ComponentsController } from './controllers/components.controller';
+import { ConditionalFormattingMenuController } from './menu/cf.menu.controller';
 
-@DependentOn(UniverSheetsConditionalFormattingPlugin, UniverSheetsFormulaPlugin)
+@DependentOn(
+    UniverRenderEnginePlugin,
+    UniverSheetsPlugin,
+    UniverSheetsFormulaPlugin,
+    UniverSheetsConditionalFormattingPlugin,
+    UniverSheetsUIPlugin
+)
 export class UniverSheetsConditionalFormattingUIPlugin extends Plugin {
     static override pluginName = `${SHEET_CONDITIONAL_FORMATTING_PLUGIN}_UI_PLUGIN`;
+    static override packageName = pkg.name;
+    static override version = pkg.version;
     static override type = UniverInstanceType.UNIVER_SHEET;
 
     constructor(
@@ -82,6 +95,8 @@ export class UniverSheetsConditionalFormattingUIPlugin extends Plugin {
     }
 
     override onStarting(): void {
+        this._injector.add([ComponentsController]);
+        this._injector.get(ComponentsController);
         registerDependencies(this._injector, [
             [SheetsCfRenderController],
             [ConditionalFormattingCopyPasteController],
@@ -128,6 +143,7 @@ export class UniverSheetsConditionalFormattingUIPlugin extends Plugin {
             AddAverageCfCommand,
             AddColorScaleConditionalRuleCommand,
             AddDataBarConditionalRuleCommand,
+            AddIconSetConditionalRuleCommand,
             AddDuplicateValuesCfCommand,
             AddNumberCfCommand,
             AddRankCfCommand,

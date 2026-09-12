@@ -15,16 +15,20 @@
  */
 
 import type { Dependency } from '@univerjs/core';
-import type { IUniverEngineFormulaConfig } from './controller/config.schema';
+import type { IUniverEngineFormulaConfig } from './config/config';
 import { IConfigService, Inject, Injector, merge, Plugin, touchDependencies } from '@univerjs/core';
-import { CalculateController } from './controller/calculate.controller';
-import { ComputingStatusReporterController } from './controller/computing-status.controller';
-import { defaultPluginConfig, ENGINE_FORMULA_PLUGIN_CONFIG_KEY } from './controller/config.schema';
-import { FormulaController } from './controller/formula.controller';
-import { SetDependencyController } from './controller/set-dependency.controller';
-import { SetFeatureCalculationController } from './controller/set-feature-calculation.controller';
-import { SetOtherFormulaController } from './controller/set-other-formula.controller';
-// import { SetSuperTableController } from './controller/set-super-table.controller';
+import pkg from '../package.json';
+import { defaultPluginConfig, ENGINE_FORMULA_PLUGIN_CONFIG_KEY } from './config/config';
+import { CalculateController } from './controllers/calculate.controller';
+import { ComputingStatusReporterController } from './controllers/computing-status.controller';
+import { FormulaCalculationSessionController } from './controllers/formula-calculation-session.controller';
+import { FormulaCalculationTriggerController } from './controllers/formula-calculation-trigger.controller';
+import { FormulaController } from './controllers/formula.controller';
+import { SetDependencyController } from './controllers/set-dependency.controller';
+import { SetFeatureCalculationController } from './controllers/set-feature-calculation.controller';
+import { SetOtherFormulaController } from './controllers/set-other-formula.controller';
+import { SuperTableActiveDirtyController } from './controllers/super-table-active-dirty.controller';
+// import { SetSuperTableController } from './controllers/set-super-table.controller';
 import { Lexer } from './engine/analysis/lexer';
 import { LexerTreeBuilder } from './engine/analysis/lexer-tree-builder';
 import { AstTreeBuilder } from './engine/analysis/parser';
@@ -44,25 +48,37 @@ import { FormulaDataModel } from './models/formula-data.model';
 import { ActiveDirtyManagerService, IActiveDirtyManagerService } from './services/active-dirty-manager.service';
 import { CalculateFormulaService, ICalculateFormulaService } from './services/calculate-formula.service';
 import { FormulaCurrentConfigService, IFormulaCurrentConfigService } from './services/current-data.service';
+import {
+    IFormulaExternalReferenceDataLoader,
+    NoopFormulaExternalReferenceDataLoader,
+} from './services/external-reference-data-loader.service';
 import { DefinedNamesService, IDefinedNamesService } from './services/defined-names.service';
 import { DependencyManagerService, IDependencyManagerService } from './services/dependency-manager.service';
 import {
     FeatureCalculationManagerService,
     IFeatureCalculationManagerService,
 } from './services/feature-calculation-manager.service';
+import { FormulaCalculationTriggerService } from './services/formula-calculation-trigger.service';
+import { DescriptionService, IDescriptionService } from './services/formula/description.service';
+import { FormulaCalculationSessionService } from './services/formula/formula-calculation-session.service';
+import { IRegisterFunctionService, RegisterFunctionService } from './services/formula/register-function.service';
 import { FunctionService, IFunctionService } from './services/function.service';
 import { GlobalComputingStatusService } from './services/global-computing-status.service';
-import { HyperlinkEngineFormulaService, IHyperlinkEngineFormulaService } from './services/hyperlink-engine-formula.service';
+import {
+    HyperlinkEngineFormulaService,
+    IHyperlinkEngineFormulaService,
+} from './services/hyperlink-engine-formula.service';
 import { IOtherFormulaManagerService, OtherFormulaManagerService } from './services/other-formula-manager.service';
 import { RegisterOtherFormulaService } from './services/register-other-formula.service';
 import { FormulaRuntimeService, IFormulaRuntimeService } from './services/runtime.service';
 import { ISheetRowFilteredService, SheetRowFilteredService } from './services/sheet-row-filtered.service';
 import { ISuperTableService, SuperTableService } from './services/super-table.service';
-
-const PLUGIN_NAME = 'UNIVER_ENGINE_FORMULA_PLUGIN';
+import { FormulaUnitReferenceResolver, IFormulaUnitReferenceResolver } from './services/unit-reference-resolver.service';
 
 export class UniverFormulaEnginePlugin extends Plugin {
-    static override pluginName = PLUGIN_NAME;
+    static override pluginName = 'UNIVER_ENGINE_FORMULA_PLUGIN';
+    static override packageName = pkg.name;
+    static override version = pkg.version;
 
     constructor(
         protected readonly _config: Partial<IUniverEngineFormulaConfig> = defaultPluginConfig,
@@ -88,6 +104,9 @@ export class UniverFormulaEnginePlugin extends Plugin {
     override onReady(): void {
         touchDependencies(this._injector, [
             [FormulaController],
+            [FormulaCalculationSessionController],
+            [FormulaCalculationTriggerController],
+            [SuperTableActiveDirtyController],
             // [SetSuperTableController],
         ]);
 
@@ -118,6 +137,10 @@ export class UniverFormulaEnginePlugin extends Plugin {
             [IFunctionService, { useClass: FunctionService }],
             [IDefinedNamesService, { useClass: DefinedNamesService }],
             [IActiveDirtyManagerService, { useClass: ActiveDirtyManagerService }],
+            [IDescriptionService, { useClass: DescriptionService }],
+            [IRegisterFunctionService, { useClass: RegisterFunctionService }],
+            [FormulaCalculationSessionService],
+            [FormulaCalculationTriggerService],
             [RegisterOtherFormulaService],
             [IHyperlinkEngineFormulaService, { useClass: HyperlinkEngineFormulaService }],
             [ISheetRowFilteredService, { useClass: SheetRowFilteredService }],
@@ -127,6 +150,9 @@ export class UniverFormulaEnginePlugin extends Plugin {
             [FormulaDataModel],
             //Controllers
             [FormulaController],
+            [FormulaCalculationSessionController],
+            [FormulaCalculationTriggerController],
+            [SuperTableActiveDirtyController],
             // [SetSuperTableController],
             [ComputingStatusReporterController],
         ];
@@ -172,6 +198,8 @@ export class UniverFormulaEnginePlugin extends Plugin {
                 [ICalculateFormulaService, { useClass: CalculateFormulaService }],
                 [IDependencyManagerService, { useClass: DependencyManagerService }],
                 [IFormulaDependencyGenerator, { useClass: FormulaDependencyGenerator }],
+                [IFormulaUnitReferenceResolver, { useClass: FormulaUnitReferenceResolver }],
+                [IFormulaExternalReferenceDataLoader, { useClass: NoopFormulaExternalReferenceDataLoader }],
             ];
 
             dependencies.forEach((dependency) => this._injector.add(dependency));

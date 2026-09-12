@@ -15,8 +15,20 @@
  */
 
 import type { ContextService, IDisposable, Nullable } from '@univerjs/core';
-import { createIdentifier, Disposable, DocumentDataModel, FOCUSING_UNIVER_EDITOR, IContextService, IUniverInstanceService, remove, SlideDataModel, toDisposable, UniverInstanceType, Workbook } from '@univerjs/core';
+import {
+    createIdentifier,
+    Disposable,
+    DocumentDataModel,
+    FOCUSING_UNIVER_EDITOR,
+    IContextService,
+    IUniverInstanceService,
+    remove,
+    toDisposable,
+    UniverInstanceType,
+    Workbook,
+} from '@univerjs/core';
 import { fromEvent } from 'rxjs';
+import { isEmbedBoundaryTarget } from '../../utils/embed-boundary';
 
 type FocusHandlerFn = (unitId: string) => void;
 
@@ -35,8 +47,8 @@ export interface ILayoutService {
     readonly isFocused: boolean;
 
     get rootContainerElement(): Nullable<HTMLElement>;
-    /** Re-focus the currently focused Univer business instance. */
-    focus(): void;
+    /** Re-focus a specific Univer business instance, or the currently focused one when omitted. */
+    focus(unitId?: string): void;
 
     /** Register a focus handler to focus on certain type of Univer unit. */
     registerFocusHandler(type: UniverInstanceType, handler: FocusHandlerFn): IDisposable;
@@ -86,8 +98,10 @@ export class DesktopLayoutService extends Disposable implements ILayoutService {
         return this._rootContainerElement;
     }
 
-    focus(): void {
-        const currentFocused = this._univerInstanceService.getFocusedUnit();
+    focus(unitId?: string): void {
+        const currentFocused = unitId === undefined
+            ? this._univerInstanceService.getFocusedUnit()
+            : this._univerInstanceService.getUnit(unitId);
         if (!currentFocused) {
             return;
         }
@@ -97,7 +111,7 @@ export class DesktopLayoutService extends Disposable implements ILayoutService {
             handler = this._focusHandlers.get(UniverInstanceType.UNIVER_SHEET);
         } else if (currentFocused instanceof DocumentDataModel) {
             handler = this._focusHandlers.get(UniverInstanceType.UNIVER_DOC);
-        } else if (currentFocused instanceof SlideDataModel) {
+        } else if (currentFocused?.type === UniverInstanceType.UNIVER_SLIDE) {
             handler = this._focusHandlers.get(UniverInstanceType.UNIVER_SLIDE);
         }
 
@@ -164,8 +178,22 @@ export class DesktopLayoutService extends Disposable implements ILayoutService {
             fromEvent(window, 'focusin').subscribe((event) => {
                 const target = event.target as HTMLElement;
 
-                if (this._rootContainerElement?.contains(target) && givingBackFocusElements.some((item) => target.dataset.uComp === item)) {
-                    queueMicrotask(() => this.focus());
+                if (
+                    this._rootContainerElement?.contains(target) &&
+                    givingBackFocusElements.some((item) => target.dataset.uComp === item) &&
+                    !isEmbedBoundaryTarget(target)
+                ) {
+                    queueMicrotask(() => {
+                        const targetUnitId = getFocusUnitIdFromElement(target);
+                        if (targetUnitId && this._univerInstanceService.getUnit(targetUnitId)) {
+                            this._univerInstanceService.focusUnit(targetUnitId);
+                        }
+
+                        this.focus();
+                        this._isFocused = true;
+                        this._contextService.setContextValue(FOCUSING_UNIVER, this._isFocused);
+                        this._contextService.setContextValue(FOCUSING_UNIVER_EDITOR, getFocusingUniverEditorStatus());
+                    });
                     return;
                 }
 
@@ -188,4 +216,8 @@ export class DesktopLayoutService extends Disposable implements ILayoutService {
 
 function getFocusingUniverEditorStatus(): boolean {
     return (document.activeElement as HTMLElement)?.dataset.uComp === 'editor';
+}
+
+function getFocusUnitIdFromElement(target: HTMLElement): string | undefined {
+    return target.dataset.uUnitId;
 }

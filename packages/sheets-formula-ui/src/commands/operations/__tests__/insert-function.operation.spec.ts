@@ -14,9 +14,20 @@
  * limitations under the License.
  */
 
-import type { ICellData, Injector, Nullable, Univer } from '@univerjs/core';
+import type { ICellData, Injector, Nullable, Univer, Workbook } from '@univerjs/core';
 import type { IInsertFunctionOperationParams } from '../insert-function.operation';
-import { ICommandService, IUniverInstanceService, ObjectMatrix, RANGE_TYPE, RedoCommand, UndoCommand } from '@univerjs/core';
+import {
+    DOCS_FORMULA_BAR_EDITOR_UNIT_ID_KEY,
+    DOCS_NORMAL_EDITOR_UNIT_ID_KEY,
+    ICommandService,
+    IUniverInstanceService,
+    ObjectMatrix,
+    RANGE_TYPE,
+    RedoCommand,
+    UndoCommand,
+    UniverInstanceType,
+} from '@univerjs/core';
+import { IEditorService } from '@univerjs/docs-ui';
 import {
     SetRangeValuesCommand,
     SetRangeValuesMutation,
@@ -24,7 +35,8 @@ import {
     SheetsSelectionsService,
 } from '@univerjs/sheets';
 import { InsertFunctionCommand } from '@univerjs/sheets-formula';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { IEditorBridgeService, SetCellEditVisibleOperation } from '@univerjs/sheets-ui';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
     InsertFunctionOperation,
     isMultiRowsColumnsRange,
@@ -37,11 +49,27 @@ describe('Test insert function operation', () => {
     let univer: Univer;
     let get: Injector['get'];
     let commandService: ICommandService;
+    let editorService: IEditorService;
+
+    class TestEditorService {
+        getEditor = vi.fn(() => null);
+        register = vi.fn();
+        getAllEditor = vi.fn(() => new Map());
+        isEditor = vi.fn(() => false);
+        isSheetEditor = vi.fn(() => false);
+        blur$ = { subscribe: vi.fn() };
+        blur = vi.fn();
+        focus$ = { subscribe: vi.fn() };
+        focus = vi.fn();
+        getFocusId = vi.fn(() => null);
+        getFocusEditor = vi.fn(() => null);
+    }
 
     beforeEach(() => {
-        const testBed = createCommandTestBed();
+        const testBed = createCommandTestBed(undefined, [[IEditorService, { useClass: TestEditorService as never }]]);
         univer = testBed.univer;
         get = testBed.get;
+        editorService = get(IEditorService);
 
         commandService = get(ICommandService);
         commandService.registerCommand(InsertFunctionOperation);
@@ -49,6 +77,7 @@ describe('Test insert function operation', () => {
         commandService.registerCommand(SetRangeValuesCommand);
         commandService.registerCommand(SetRangeValuesMutation);
         commandService.registerCommand(SetSelectionsOperation);
+        commandService.registerCommand(SetCellEditVisibleOperation);
     });
 
     afterEach(() => {
@@ -71,7 +100,7 @@ describe('Test insert function operation', () => {
 
                 function getValues() {
                     return get(IUniverInstanceService)
-                        .getUniverSheetInstance('test')
+                        .getUnit<Workbook>('test', UniverInstanceType.UNIVER_SHEET)
                         ?.getSheetBySheetId('sheet1')
                         ?.getRange(2, 1, 3, 1)
                         .getValues();
@@ -108,7 +137,7 @@ describe('Test insert function operation', () => {
 
                 function getValues() {
                     return get(IUniverInstanceService)
-                        .getUniverSheetInstance('test')
+                        .getUnit<Workbook>('test', UniverInstanceType.UNIVER_SHEET)
                         ?.getSheetBySheetId('sheet1')
                         ?.getRange(1, 2, 1, 3)
                         .getValues();
@@ -174,14 +203,14 @@ describe('Test insert function operation', () => {
                     },
                 });
                 await commandService.executeCommand(SetRangeValuesCommand.id, {
-                    value: cellMatrix.getData(),
+                    value: cellMatrix.clone(),
                     sheetId: 'sheet1',
                     range,
                 });
 
                 function getValues(range: { startRow: number; startColumn: number; endRow: number; endColumn: number }) {
                     return get(IUniverInstanceService)
-                        .getUniverSheetInstance('test')
+                        .getUnit<Workbook>('test', UniverInstanceType.UNIVER_SHEET)
                         ?.getSheetBySheetId('sheet1')
                         ?.getRange(range.startRow, range.startColumn, range.endRow, range.endColumn)
                         .getValues();
@@ -214,6 +243,45 @@ describe('Test insert function operation', () => {
             it('will not apply when there is no selected ranges', async () => {
                 const result = await commandService.executeCommand(InsertFunctionOperation.id);
                 expect(result).toBeFalsy();
+            });
+
+            it('enters edit mode for a single cell and injects the matched reference into both editors', async () => {
+                const selectionManager = get(SheetsSelectionsService);
+                const editorBridgeService = get(IEditorBridgeService);
+                const normalEditorReplaceText = vi.fn();
+                const formulaEditorReplaceText = vi.fn();
+
+                vi.spyOn(editorService, 'getEditor').mockImplementation((id?: string) => {
+                    if (id === DOCS_NORMAL_EDITOR_UNIT_ID_KEY) {
+                        return { replaceText: normalEditorReplaceText } as never;
+                    }
+
+                    if (id === DOCS_FORMULA_BAR_EDITOR_UNIT_ID_KEY) {
+                        return { replaceText: formulaEditorReplaceText } as never;
+                    }
+
+                    return null;
+                });
+
+                selectionManager.addSelections([
+                    {
+                        range: { startRow: 2, startColumn: 1, endRow: 2, endColumn: 1, rangeType: RANGE_TYPE.NORMAL },
+                        primary: null,
+                        style: null,
+                    },
+                ]);
+
+                const result = await commandService.executeCommand(InsertFunctionOperation.id, {
+                    value: 'SUM',
+                });
+
+                expect(result).toBeFalsy();
+                expect(editorBridgeService.isVisible()).toMatchObject({
+                    visible: true,
+                    unitId: 'test',
+                });
+                expect(normalEditorReplaceText).toHaveBeenCalledWith('=SUM(B2');
+                expect(formulaEditorReplaceText).toHaveBeenCalledWith('=SUM(B2', false);
             });
         });
 

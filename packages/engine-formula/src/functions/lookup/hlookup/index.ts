@@ -14,10 +14,11 @@
  * limitations under the License.
  */
 
-import { ErrorType } from '../../../basics/error-type';
 import type { ArrayValueObject } from '../../../engine/value-object/array-value-object';
 import type { BaseValueObject } from '../../../engine/value-object/base-value-object';
+import { ErrorType } from '../../../basics/error-type';
 import { ErrorValueObject } from '../../../engine/value-object/base-value-object';
+import { NumberValueObject } from '../../../engine/value-object/primitive-object';
 import { BaseFunction } from '../../base-function';
 
 export class Hlookup extends BaseFunction {
@@ -85,9 +86,17 @@ export class Hlookup extends BaseFunction {
         rangeLookupValue: number
     ) {
         if (rangeLookupValue === 0) {
-            return this.equalSearch(value, searchArray, resultArray);
+            return this._blankResultAsZero(this.equalSearch(value, searchArray, resultArray));
         }
 
         return this.binarySearch(value, searchArray, resultArray);
+    }
+
+    private _blankResultAsZero(value: BaseValueObject) {
+        if (value.isNull()) {
+            return NumberValueObject.create(0);
+        }
+
+        return value;
     }
 }

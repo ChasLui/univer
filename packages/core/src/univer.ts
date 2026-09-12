@@ -16,14 +16,12 @@
 
 import type { Theme } from '@univerjs/themes';
 import type { Dependency, IDisposable } from './common/di';
-import type { UnitModel, UnitType } from './common/unit';
+import type { UnitModel } from './common/unit';
 import type { LogLevel } from './services/log/log.service';
 import type { DependencyOverride } from './services/plugin/plugin-override';
 import type { Plugin, PluginCtor } from './services/plugin/plugin.service';
 import type { ILocales } from './shared';
-import type { IWorkbookData } from './sheets/typedef';
 import type { LocaleType } from './types/enum/locale-type';
-import type { IDocumentData, ISlideData } from './types/interfaces';
 import { Injector, touchDependencies } from './common/di';
 import { UniverInstanceType } from './common/unit';
 import { DocumentDataModel } from './docs/data-model/document-data-model';
@@ -40,20 +38,27 @@ import { LocaleService } from './services/locale/locale.service';
 import { DesktopLogService, ILogService } from './services/log/log.service';
 import { MentionIOLocalService } from './services/mention-io/mention-io-local.service';
 import { IMentionIOService } from './services/mention-io/type';
+import { ObjectPermissionService } from './services/permission/object-permission.service';
 import { PermissionService } from './services/permission/permission.service';
 import { IPermissionService } from './services/permission/type';
 import { mergeOverrideWithDependencies } from './services/plugin/plugin-override';
 import { PluginService } from './services/plugin/plugin.service';
+import { RegionService } from './services/region/region.service';
 import { ResourceLoaderService } from './services/resource-loader/resource-loader.service';
 import { IResourceLoaderService } from './services/resource-loader/type';
 import { ResourceManagerService } from './services/resource-manager/resource-manager.service';
 import { IResourceManagerService } from './services/resource-manager/type';
 import { ThemeService } from './services/theme/theme.service';
-import { IUndoRedoService, LocalUndoRedoService } from './services/undoredo/undoredo.service';
+import {
+    DEFAULT_UNDO_REDO_HISTORY_LIMIT,
+    IUndoRedoService,
+    LocalUndoRedoService,
+    UNDO_REDO_HISTORY_LIMIT_CONFIG_KEY,
+} from './services/undoredo/undoredo.service';
 import { UserManagerService } from './services/user-manager/user-manager.service';
 import { DisposableCollection, toDisposable } from './shared';
 import { Workbook } from './sheets/workbook';
-import { SlideDataModel } from './slides/slide-model';
+import { SlideDataModel } from './slides/slide-data-model';
 
 export interface IUniverConfig {
     /**
@@ -73,6 +78,17 @@ export interface IUniverConfig {
     locale?: LocaleType;
 
     /**
+     * The region of the Univer instance. It follows locale until explicitly configured.
+     */
+    region?: LocaleType;
+
+    /**
+     * The direction of the Univer instance.
+     * @default 'ltr'
+     */
+    direction?: 'ltr' | 'rtl';
+
+    /**
      * The locales to be used
      */
     locales?: ILocales;
@@ -89,6 +105,13 @@ export interface IUniverConfig {
     logCommandExecution?: boolean;
 
     /**
+     * The maximum number of undoable command groups retained for each unit.
+     * Set to `0` to disable undo history.
+     * @default 50
+     */
+    undoRedoHistoryLimit?: number;
+
+    /**
      * The override dependencies of the Univer instance.
      */
     override?: DependencyOverride;
@@ -98,7 +121,7 @@ export interface IUniverConfig {
  * @hideconstructor
  */
 export class Univer implements IDisposable {
-    private _startedTypes = new Set<UnitType>();
+    private _startedTypes = new Set<UniverInstanceType>();
     private _injector: Injector;
 
     private get _univerInstanceService(): IUniverInstanceService {
@@ -119,15 +142,22 @@ export class Univer implements IDisposable {
     constructor(config: Partial<IUniverConfig> = {}, parentInjector?: Injector) {
         const injector = this._injector = createUniverInjector(parentInjector, config?.override);
 
-        const { theme, darkMode, locale, locales, logLevel, logCommandExecution } = config;
+        const { theme, darkMode, locale, region, locales, direction, logLevel, logCommandExecution, undoRedoHistoryLimit } = config;
+        const configService = this._injector.get(IConfigService);
         if (theme) this._injector.get(ThemeService).setTheme(theme);
         if (darkMode) this._injector.get(ThemeService).setDarkMode(darkMode);
         if (locales) this._injector.get(LocaleService).load(locales);
         if (locale) this._injector.get(LocaleService).setLocale(locale);
+        if (region) this._injector.get(RegionService).setRegion(region);
+        if (direction) this._injector.get(LocaleService).setDirection(direction);
         if (logLevel) this._injector.get(ILogService).setLogLevel(logLevel);
         if (logCommandExecution !== undefined) {
-            this._injector.get(IConfigService).setConfig(COMMAND_LOG_EXECUTION_CONFIG_KEY, logCommandExecution);
+            configService.setConfig(COMMAND_LOG_EXECUTION_CONFIG_KEY, logCommandExecution);
         }
+        configService.setConfig(
+            UNDO_REDO_HISTORY_LIMIT_CONFIG_KEY,
+            undoRedoHistoryLimit ?? DEFAULT_UNDO_REDO_HISTORY_LIMIT
+        );
 
         this._init(injector);
     }
@@ -161,34 +191,12 @@ export class Univer implements IDisposable {
         this._injector.get(LocaleService).setLocale(locale);
     }
 
-    createUnit<T, U extends UnitModel>(type: UnitType, data: Partial<T>): U {
+    setRegion(region: LocaleType): void {
+        this._injector.get(RegionService).setRegion(region);
+    }
+
+    createUnit<T, U extends UnitModel>(type: UniverInstanceType, data: Partial<T>): U {
         return this._univerInstanceService.createUnit(type, data);
-    }
-
-    /**
-     * Create a univer sheet instance with internal dependency injection.
-     *
-     * @deprecated use `createUnit` instead
-     */
-    createUniverSheet(data: Partial<IWorkbookData>): Workbook {
-        this._injector.get(ILogService).warn('[Univer]', 'Univer.createUniverSheet is deprecated, use createUnit instead');
-        return this._univerInstanceService.createUnit<IWorkbookData, Workbook>(UniverInstanceType.UNIVER_SHEET, data);
-    }
-
-    /**
-     * @deprecated use `createUnit` instead
-     */
-    createUniverDoc(data: Partial<IDocumentData>): DocumentDataModel {
-        this._injector.get(ILogService).warn('[Univer]', 'Univer.createUniverDoc is deprecated, use createUnit instead');
-        return this._univerInstanceService.createUnit<IDocumentData, DocumentDataModel>(UniverInstanceType.UNIVER_DOC, data);
-    }
-
-    /**
-     * @deprecated use `createUnit` instead
-     */
-    createUniverSlide(data: Partial<ISlideData>): SlideDataModel {
-        this._injector.get(ILogService).warn('[Univer]', 'Univer.createUniverSlide is deprecated, use createUnit instead');
-        return this._univerInstanceService.createUnit<ISlideData, SlideDataModel>(UniverInstanceType.UNIVER_SLIDE, data);
     }
 
     private _init(injector: Injector): void {
@@ -198,21 +206,25 @@ export class Univer implements IDisposable {
 
         const univerInstanceService = injector.get(IUniverInstanceService) as UniverInstanceService;
         univerInstanceService.__setCreateHandler(
-            (type: UnitType, data, ctor, options) => {
-                if (!this._startedTypes.has(type)) {
+            (type: UniverInstanceType, data, ctor, options) => {
+                const isFirstTime = !this._startedTypes.has(type);
+                if (isFirstTime) {
                     this._pluginService.startPluginsForType(type);
                     this._startedTypes.add(type);
-
-                    const model = injector.createInstance(ctor, data);
-                    univerInstanceService.__addUnit(model, options);
-
-                    this._tryProgressToReady();
-
-                    return model;
                 }
 
-                const model = injector.createInstance(ctor, data);
+                const actualCtor = univerInstanceService.__getCtorByType(type) ?? ctor;
+                if (!actualCtor) {
+                    throw new Error(`[Univer]: No constructor registered for unit type ${type}.`);
+                }
+
+                const model = injector.createInstance(actualCtor, data);
                 univerInstanceService.__addUnit(model, options);
+
+                if (isFirstTime) {
+                    this._tryProgressToReady();
+                }
+
                 return model;
             }
         );
@@ -263,6 +275,7 @@ function createUniverInjector(parentInjector?: Injector, override?: DependencyOv
     const dependencies: Dependency[] = mergeOverrideWithDependencies([
         [ErrorService],
         [LocaleService],
+        [RegionService],
         [ThemeService],
         [LifecycleService],
         [PluginService],
@@ -271,6 +284,7 @@ function createUniverInjector(parentInjector?: Injector, override?: DependencyOv
         // abstract services
         [IUniverInstanceService, { useClass: UniverInstanceService }],
         [IPermissionService, { useClass: PermissionService }],
+        [ObjectPermissionService],
         [ILogService, { useClass: DesktopLogService, lazy: true }],
         [ICommandService, { useClass: CommandService }],
         [IUndoRedoService, { useClass: LocalUndoRedoService, lazy: true }],

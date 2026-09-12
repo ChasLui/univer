@@ -14,18 +14,19 @@
  * limitations under the License.
  */
 
-import { ErrorType } from '../../../basics/error-type';
+import type { ArrayValueObject } from '../../../engine/value-object/array-value-object';
 import type { BaseValueObject } from '../../../engine/value-object/base-value-object';
+import { ErrorType } from '../../../basics/error-type';
+import { expandArrayValueObject } from '../../../engine/utils/array-object';
+import { checkVariantsErrorIsStringToNumber } from '../../../engine/utils/check-variant-error';
 import { ErrorValueObject } from '../../../engine/value-object/base-value-object';
 import { NumberValueObject } from '../../../engine/value-object/primitive-object';
 import { BaseFunction } from '../../base-function';
-import type { ArrayValueObject } from '../../../engine/value-object/array-value-object';
-import { expandArrayValueObject } from '../../../engine/utils/array-object';
-import { checkVariantsErrorIsStringToNumber } from '../../../engine/utils/check-variant-error';
 
 export class Rri extends BaseFunction {
     override minParams = 3;
 
+    // TODO(formula-contract): Restrict the runtime maximum to the three documented arguments handled by calculate.
     override maxParams = 6;
 
     override calculate(nper: BaseValueObject, pv: BaseValueObject, fv: BaseValueObject): BaseValueObject {

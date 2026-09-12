@@ -41,7 +41,7 @@ export class SheetsCellContentController extends Disposable {
                     effect: InterceptorEffectEnum.Style,
                     handler: (cell, pos, next) => {
                         const { row, col, unitId, subUnitId } = pos;
-                        const note = this._sheetsNoteModel.getNote(unitId, subUnitId, row, col);
+                        const note = this._sheetsNoteModel.getNote(unitId, subUnitId, { row, col });
                         if (note) {
                             if (!cell || cell === pos.rawData) {
                                 cell = { ...pos.rawData };
@@ -68,10 +68,10 @@ export class SheetsCellContentController extends Disposable {
 
     private _initSkeletonChange() {
         const markSkeletonDirty = () => {
-            const workbook = this._univerInstanceService.getCurrentUnitForType<Workbook>(UniverInstanceType.UNIVER_SHEET);
+            const workbook = this._univerInstanceService.getCurrentUnitOfType<Workbook>(UniverInstanceType.UNIVER_SHEET);
             if (!workbook) return;
             const unitId = workbook.getUnitId();
-            const currentRender = this._renderManagerService.getRenderById(unitId);
+            const currentRender = this._renderManagerService.getRenderUnitById(unitId);
             currentRender?.mainComponent?.makeForceDirty();
         };
 

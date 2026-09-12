@@ -1,9 +1,9 @@
 {
     "name": "@univerjs/watermark",
-    "version": "0.15.3",
+    "version": "1.0.0-rc.0",
     "private": false,
-    "description": "univer watermark plugin",
-    "author": "DreamNum <developer@univer.ai>",
+    "description": "Watermark rendering plugin for Univer.",
+    "author": "DreamNum Co., Ltd. <developer@univer.ai>",
     "license": "Apache-2.0",
     "funding": {
         "type": "opencollective",
@@ -18,7 +18,11 @@
         "url": "https://github.com/dream-num/univer/issues"
     },
     "keywords": [
-        "univer"
+        "univer",
+        "watermark",
+        "rendering",
+        "documents",
+        "plugin"
     ],
     "exports": {
         ".": "./src/index.ts",
@@ -66,7 +70,9 @@
         "test:watch": "vitest",
         "coverage": "vitest run --coverage",
         "typecheck": "tsc --noEmit",
-        "build": "univer-cli build"
+        "build:bundle": "univer-cli build",
+        "build:types": "tsc -p tsconfig.node.json",
+        "build": "pnpm run build:bundle && pnpm run build:types"
     },
     "peerDependencies": {
         "rxjs": ">=7.0.0"
@@ -78,8 +84,7 @@
     "devDependencies": {
         "@univerjs-infra/shared": "workspace:*",
         "rxjs": "^7.8.2",
-        "typescript": "^5.9.3",
-        "vite": "^7.3.1",
-        "vitest": "^4.0.18"
+        "typescript": "^6.0.3",
+        "vitest": "^5.0.0"
     }
 }

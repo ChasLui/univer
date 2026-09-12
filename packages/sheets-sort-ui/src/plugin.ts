@@ -15,7 +15,7 @@
  */
 
 import type { Dependency } from '@univerjs/core';
-import type { IUniverSheetsSortUIConfig } from './controllers/config.schema';
+import type { IUniverSheetsSortUIConfig } from './config/config';
 import {
     DependentOn,
     IConfigService,
@@ -25,17 +25,21 @@ import {
     Plugin,
     UniverInstanceType,
 } from '@univerjs/core';
+import { UniverSheetsPlugin } from '@univerjs/sheets';
 import { UniverSheetsSortPlugin } from '@univerjs/sheets-sort';
-import { defaultPluginConfig, SHEETS_SORT_UI_PLUGIN_CONFIG_KEY } from './controllers/config.schema';
-import { SheetsSortUIController } from './controllers/sheets-sort-ui.controller';
+import { UniverSheetsUIPlugin } from '@univerjs/sheets-ui';
+import pkg from '../package.json';
+import { defaultPluginConfig, SHEETS_SORT_UI_PLUGIN_CONFIG_KEY } from './config/config';
+import { ComponentsController } from './controllers/components.controller';
+import { SheetsSortUIController } from './controllers/ui.controller';
 import { SheetsSortUIService } from './services/sheets-sort-ui.service';
 
-const NAME = 'SHEET_SORT_UI_PLUGIN';
-
-@DependentOn(UniverSheetsSortPlugin)
+@DependentOn(UniverSheetsPlugin, UniverSheetsSortPlugin, UniverSheetsUIPlugin)
 export class UniverSheetsSortUIPlugin extends Plugin {
     static override type = UniverInstanceType.UNIVER_SHEET;
-    static override pluginName = NAME;
+    static override pluginName = 'SHEET_SORT_UI_PLUGIN';
+    static override packageName = pkg.name;
+    static override version = pkg.version;
 
     constructor(
         private readonly _config: Partial<IUniverSheetsSortUIConfig> = defaultPluginConfig,
@@ -54,6 +58,8 @@ export class UniverSheetsSortUIPlugin extends Plugin {
     }
 
     override onStarting(): void {
+        this._injector.add([ComponentsController]);
+        this._injector.get(ComponentsController);
         ([
             [SheetsSortUIService],
             [SheetsSortUIController],

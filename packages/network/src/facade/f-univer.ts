@@ -36,7 +36,7 @@ interface IFUniverNetworkMixin {
      * @example
      * ```typescript
      * // Replace the URL with the address of your own WebSocket service
-     * const ws = univerAPI.createSocket('ws://47.100.177.253:8449/ws');
+     * const ws = univerAPI.createSocket('wss://47.100.177.253:8449/ws');
      *
      * ws.open$.subscribe(() => {
      *   console.log('websocket opened');
@@ -66,13 +66,13 @@ interface IFUniverNetworkMixin {
      *   console.log('websocket error', error);
      * });
      *
-     * univerAPI.onCommandExecuted((command, options) => {
+     * univerAPI.addEvent(univerAPI.Event.CommandExecuted, ({ id, type, params, options }) => {
      *   // Only synchronize local mutations
-     *   if (command.type !== 2 || options?.fromCollab || options?.onlyLocal || command.id === 'doc.mutation.rich-text-editing') {
+     *   if (type !== univerAPI.Enum.CommandType.MUTATION || options?.fromCollab || options?.onlyLocal || id === 'doc.mutation.rich-text-editing') {
      *     return;
      *   }
      *
-     *   const commandInfo = JSON.stringify({ command, options: { fromCollab: true } });
+     *   const commandInfo = JSON.stringify({ command: { id, type, params }, options: { fromCollab: true } });
      *   ws.send(commandInfo);
      * });
      * ```

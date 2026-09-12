@@ -16,18 +16,34 @@
 
 import type { Dependency } from '@univerjs/core';
 import type { IWatermarkConfigWithType } from '@univerjs/engine-render';
-import type { IUniverWatermarkConfig } from './controllers/config.schema';
-import { IConfigService, ILocalStorageService, Inject, Injector, merge, Plugin, UniverInstanceType } from '@univerjs/core';
-import { IRenderManagerService, IWatermarkTypeEnum, UNIVER_WATERMARK_STORAGE_KEY } from '@univerjs/engine-render';
+import type { IUniverWatermarkConfig } from './config/config';
+import {
+    DependentOn,
+    IConfigService,
+    ILocalStorageService,
+    Inject,
+    Injector,
+    merge,
+    Plugin,
+    UniverInstanceType,
+} from '@univerjs/core';
+import {
+    IRenderManagerService,
+    IWatermarkTypeEnum,
+    UNIVER_WATERMARK_STORAGE_KEY,
+    UniverRenderEnginePlugin,
+} from '@univerjs/engine-render';
+import pkg from '../package.json';
 import { WatermarkImageBaseConfig, WatermarkTextBaseConfig, WatermarkUserInfoBaseConfig } from './common/const';
-import { defaultPluginConfig, WATERMARK_PLUGIN_CONFIG_KEY } from './controllers/config.schema';
+import { defaultPluginConfig, WATERMARK_PLUGIN_CONFIG_KEY } from './config/config';
 import { WatermarkRenderController } from './controllers/watermark.render.controller';
 import { WatermarkService } from './services/watermark.service';
 
-const PLUGIN_NAME = 'UNIVER_WATERMARK_PLUGIN';
-
+@DependentOn(UniverRenderEnginePlugin)
 export class UniverWatermarkPlugin extends Plugin {
-    static override pluginName = PLUGIN_NAME;
+    static override pluginName = 'UNIVER_WATERMARK_PLUGIN';
+    static override packageName = pkg.name;
+    static override version = pkg.version;
 
     constructor(
         private readonly _config: Partial<IUniverWatermarkConfig> = defaultPluginConfig,
@@ -103,6 +119,8 @@ export class UniverWatermarkPlugin extends Plugin {
         ] as Dependency[]).forEach((d) => {
             this._renderManagerSrv.registerRenderModule(UniverInstanceType.UNIVER_SHEET, d);
             this._renderManagerSrv.registerRenderModule(UniverInstanceType.UNIVER_DOC, d);
+            this._renderManagerSrv.registerRenderModule(UniverInstanceType.UNIVER_SLIDE, d);
+            this._renderManagerSrv.registerRenderModule(UniverInstanceType.UNIVER_BASE, d);
         });
     }
 }

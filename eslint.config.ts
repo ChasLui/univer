@@ -1,49 +1,14 @@
-/* eslint-disable header/header */
-import antfu from '@antfu/eslint-config';
-import {
-    baseRules,
-    facadePreset,
-    headerPreset,
-    noBarrelImportPreset,
-    penetratingPreset,
-    specPreset,
-    tailwindcssPreset,
-    typescriptPreset,
-    univerSourcePreset,
-} from '@univerjs-infra/shared/eslint';
+import { createUniverEslintConfig } from '@univerjs-infra/shared/eslint';
 
-export default antfu(
-    {
-        ignores: [
-            'mockdata/**/*.json',
-            'pnpm-lock.yaml',
+export default createUniverEslintConfig({
+    ignores: [
+        'pnpm-lock.yaml',
+        'examples/public',
+    ],
+    header: true,
+    noFacadeImportsOutsideFacade: {
+        ignore: [
+            'presets/packages/preset-',
         ],
-        stylistic: {
-            indent: 4,
-            semi: true,
-        },
-        regexp: false,
-        react: true,
-        pnpm: false,
-        yaml: {
-            overrides: {
-                'yaml/indent': ['error', 4, { indicatorValueIndent: 2 }],
-            },
-        },
-        markdown: false,
-        typescript: true,
-        formatters: {
-            css: true,
-            html: true,
-        },
-        rules: baseRules,
     },
-    headerPreset(),
-    penetratingPreset(),
-    typescriptPreset(),
-    univerSourcePreset(),
-    facadePreset(),
-    noBarrelImportPreset(),
-    tailwindcssPreset(),
-    specPreset()
-);
+});

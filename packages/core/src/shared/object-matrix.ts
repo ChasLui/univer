@@ -62,6 +62,8 @@ export function getArrayLength<T>(o: IObjectArrayPrimitiveType<T> | IObjectMatri
     return maxIndex + 1;
 }
 
+const isEmptyValue = (value: any): boolean => value === undefined || value === null || (typeof value === 'object' && Object.keys(value).length === 0);
+
 export function insertMatrixArray<T>(
     index: number,
     value: T,
@@ -72,14 +74,16 @@ export function insertMatrixArray<T>(
 
     // move all items after index in backward order
     for (let i = length - 1; i >= index; i--) {
-        if (array[i] === undefined) {
+        if (isEmptyValue(array[i])) {
             delete array[i + 1];
         } else {
             array[i + 1] = array[i];
         }
     }
 
-    array[index] = value;
+    if (!isEmptyValue(value)) {
+        array[index] = value;
+    }
 }
 
 export function spliceArray<T>(
@@ -374,15 +378,6 @@ export class ObjectMatrix<T> {
         objectArray[column] = value;
     }
 
-    /**
-     * ！！
-     * Please +1 ‘！’, who fell into this pit.
-     * @deprecated use `realDelete` or `splice`
-     */
-    deleteValue(row: number, column: number): void {
-        delete this._matrix?.[row]?.[column];
-    }
-
     realDeleteValue(row: number, column: number): void {
         delete this._matrix?.[row]?.[column];
 
@@ -654,22 +649,7 @@ export class ObjectMatrix<T> {
         return array;
     }
 
-    /**
-     * @deprecated Use getMatrix as a substitute.
-     */
-    toJSON(): IObjectMatrixPrimitiveType<T> {
-        return this._matrix;
-    }
-
     clone(): IObjectMatrixPrimitiveType<T> {
-        const json = JSON.stringify(this._matrix);
-        return JSON.parse(json);
-    }
-
-    /**
-     * @deprecated Use clone as a substitute.
-     */
-    getData(): IObjectMatrixPrimitiveType<T> {
         const json = JSON.stringify(this._matrix);
         return JSON.parse(json);
     }
@@ -699,7 +679,7 @@ export class ObjectMatrix<T> {
             });
         });
 
-        return objectMatrix.getData();
+        return objectMatrix.clone();
     }
 
     /**
@@ -708,10 +688,10 @@ export class ObjectMatrix<T> {
      * @returns {IRange} the start and end scope of the matrix
      */
     getStartEndScope(): IRange {
-        let startRow = Infinity;
-        let endRow = -Infinity;
-        let startColumn = Infinity;
-        let endColumn = -Infinity;
+        let startRow = -1;
+        let endRow = -1;
+        let startColumn = -1;
+        let endColumn = -1;
 
         const rows = Object.keys(this._matrix);
         if (rows.length > 0) {
@@ -722,7 +702,7 @@ export class ObjectMatrix<T> {
         for (const row of rows) {
             const columns = Object.keys(this._matrix[row as unknown as number]);
             if (columns.length > 0) {
-                startColumn = Math.min(startColumn, +columns[0]);
+                startColumn = startColumn === -1 ? +columns[0] : Math.min(startColumn, +columns[0]);
                 endColumn = Math.max(endColumn, +columns[columns.length - 1]);
             }
         }

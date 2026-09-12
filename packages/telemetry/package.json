@@ -1,9 +1,10 @@
 {
     "name": "@univerjs/telemetry",
-    "version": "0.15.3",
+    "version": "1.0.0-rc.0",
     "private": false,
-    "description": "",
-    "author": "DreamNum <developer@univer.ai>",
+    "description": "Telemetry service interface for Univer packages.",
+    "author": "DreamNum Co., Ltd. <developer@univer.ai>",
+    "license": "Apache-2.0",
     "funding": {
         "type": "opencollective",
         "url": "https://opencollective.com/univer"
@@ -16,7 +17,13 @@
     "bugs": {
         "url": "https://github.com/dream-num/univer/issues"
     },
-    "keywords": [],
+    "keywords": [
+        "univer",
+        "telemetry",
+        "analytics",
+        "events",
+        "service"
+    ],
     "exports": {
         ".": "./src/index.ts",
         "./*": "./src/*"
@@ -52,15 +59,16 @@
         "test:watch": "vitest",
         "coverage": "vitest run --coverage",
         "typecheck": "tsc --noEmit",
-        "build": "univer-cli build"
+        "build:bundle": "univer-cli build",
+        "build:types": "tsc -p tsconfig.node.json",
+        "build": "pnpm run build:bundle && pnpm run build:types"
     },
     "dependencies": {
         "@univerjs/core": "workspace:*"
     },
     "devDependencies": {
         "@univerjs-infra/shared": "workspace:*",
-        "typescript": "^5.9.3",
-        "vite": "^7.3.1",
-        "vitest": "^4.0.18"
+        "typescript": "^6.0.3",
+        "vitest": "^5.0.0"
     }
 }

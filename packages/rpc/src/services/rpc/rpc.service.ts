@@ -89,7 +89,7 @@ export function fromModule(module: unknown): IChannel {
  * request the remote server by calling the channel.
  *
  * @param channel
- * @returns
+ * @returns A proxy object that forwards calls/subscriptions to the remote channel.
  */
 export function toModule<T extends object>(channel: IChannel): T {
     return new Proxy({} as T, {
@@ -180,6 +180,7 @@ interface IRPCResponse {
 
 interface IResponseHandler {
     handle(response: IRPCResponse): void;
+    dispose(error: Error): void;
 }
 
 /**
@@ -199,26 +200,34 @@ export class ChannelClient extends RxDisposable implements IChannelClient {
     }
 
     override dispose(): void {
+        if (this._disposed) {
+            return;
+        }
+
+        const error = new Error('[ChannelClient]: client is disposed!');
+        this._initialized.error(error);
+        for (const responseHandler of this._pendingRequests.values()) {
+            responseHandler.dispose(error);
+        }
         this._pendingRequests.clear();
+        super.dispose();
     }
 
     getChannel<T extends IChannel>(channelName: string): T {
-        const self = this;
-
         return {
-            call(method: string, args?: any) {
-                if (self._disposed) {
-                    return Promise.reject();
+            call: (method: string, args?: any) => {
+                if (this._disposed) {
+                    return Promise.reject(new Error('[ChannelClient]: client is disposed!'));
                 }
 
-                return self._remoteCall(channelName, method, args);
+                return this._remoteCall(channelName, method, args);
             },
-            subscribe(eventMethod: string, args?: any) {
-                if (self._disposed) {
+            subscribe: (eventMethod: string, args?: any) => {
+                if (this._disposed) {
                     throw new Error('[ChannelClient]: client is disposed!');
                 }
 
-                return self._remoteSubscribe(channelName, eventMethod, args);
+                return this._remoteSubscribe(channelName, eventMethod, args);
             },
         } as T;
     }
@@ -232,31 +241,41 @@ export class ChannelClient extends RxDisposable implements IChannelClient {
         );
     }
 
-    private async _remoteCall(channelName: string, method: string, args?: any): Promise<any> {
-        await this._whenReady();
+    private _remoteCall(channelName: string, method: string, args?: any): Promise<any> {
+        // Fast path: if the channel is already initialized, execute synchronously
+        // to avoid yielding to the microtask queue. This prevents race conditions
+        // where mutable args (e.g. snapshots) could be modified before serialization.
+        if (this._initialized.getValue()) {
+            return this._doRemoteCall(channelName, method, args);
+        }
 
+        return this._whenReady().then(() => this._doRemoteCall(channelName, method, args));
+    }
+
+    private _doRemoteCall(channelName: string, method: string, args?: any): Promise<any> {
         const sequence = ++this._lastRequestCounter;
         const type = RequestType.CALL;
         const request: IRPCRequest = { seq: sequence, type, channelName, method, args };
-        const client = this;
+        const pendingRequests = this._pendingRequests;
 
         return new Promise((resolve, reject) => {
-            // We trigger remote calling in this Promise's callback and deal
-            // with response here as well.
             const responseHandler: IResponseHandler = {
                 handle(response: IRPCResponse) {
                     switch (response.type) {
                         case ResponseType.CALL_SUCCESS:
-                            client._pendingRequests.delete(sequence);
+                            pendingRequests.delete(sequence);
                             resolve(response.data);
                             break;
                         case ResponseType.CALL_FAILURE:
-                            client._pendingRequests.delete(sequence);
+                            pendingRequests.delete(sequence);
                             reject(response.data);
                             break;
                         default:
                             throw new Error('[ChannelClient]: unknown response type!');
                     }
+                },
+                dispose(error: Error) {
+                    reject(error);
                 },
             };
 
@@ -268,7 +287,8 @@ export class ChannelClient extends RxDisposable implements IChannelClient {
     private _remoteSubscribe(channelName: string, method: string, args?: any): Observable<any> {
         return new Observable((subscriber) => {
             let sequence: number = -1;
-            this._whenReady().then(() => {
+
+            const doSubscribe = () => {
                 sequence = ++this._lastRequestCounter;
                 const type = RequestType.SUBSCRIBE;
                 const request: IRPCRequest = { seq: sequence, type, channelName, method, args };
@@ -289,11 +309,22 @@ export class ChannelClient extends RxDisposable implements IChannelClient {
                                 throw new Error('[ChannelClient]: unknown response type!');
                         }
                     },
+                    dispose(error: Error) {
+                        subscriber.error(error);
+                    },
                 };
 
                 this._pendingRequests.set(sequence, responseHandler);
                 this._sendRequest(request);
-            });
+            };
+
+            // Fast path: if the channel is already initialized, execute synchronously
+            // to avoid yielding to the microtask queue.
+            if (this._initialized.getValue()) {
+                doSubscribe();
+            } else {
+                this._whenReady().then(doSubscribe);
+            }
 
             return () => {
                 if (sequence === -1) {
@@ -350,6 +381,9 @@ export class ChannelServer extends RxDisposable implements IChannelServer {
     override dispose(): void {
         super.dispose();
 
+        for (const subscription of this._subscriptions.values()) {
+            subscription.unsubscribe();
+        }
         this._subscriptions.clear();
         this._channels.clear();
     }
@@ -392,7 +426,7 @@ export class ChannelServer extends RxDisposable implements IChannelServer {
             }
             promise = args ? channel.call(method, args) : channel.call(method);
         } catch (err: unknown) {
-            promise = Promise.reject(err);
+            promise = Promise.reject(err instanceof Error ? err : new Error(String(err)));
         }
 
         promise

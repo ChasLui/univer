@@ -18,15 +18,15 @@ import type { FunctionVariantType } from '../../../engine/reference-object/base-
 import type { BaseValueObject } from '../../../engine/value-object/base-value-object';
 import { ErrorType } from '../../../basics/error-type';
 import { expandArrayValueObject } from '../../../engine/utils/array-object';
-import { getBooleanResults, parsePairedRangeAndCriteria } from '../../../engine/utils/value-object';
+import { getPairedRangeAndCriteriaResult, parsePairedRangeAndCriteria } from '../../../engine/utils/value-object';
 import { ArrayValueObject } from '../../../engine/value-object/array-value-object';
 import { ErrorValueObject } from '../../../engine/value-object/base-value-object';
-import { NumberValueObject } from '../../../engine/value-object/primitive-object';
 import { BaseFunction } from '../../base-function';
 
 export class Countifs extends BaseFunction {
     override minParams = 2;
 
+    // TODO(formula-contract): Restrict the maximum to 254 so range/criteria pairs cannot be truncated at an odd count.
     override maxParams = 255;
 
     override needsReferenceObject = true;
@@ -39,7 +39,7 @@ export class Countifs extends BaseFunction {
             criteriaMaxRowLength,
             criteriaMaxColumnLength,
             variants: _variants,
-        } = parsePairedRangeAndCriteria(variants);
+        } = parsePairedRangeAndCriteria(this._legacyImplicitDerivedCriteria(variants));
 
         if (isError) {
             return errorObject as ErrorValueObject;
@@ -53,16 +53,11 @@ export class Countifs extends BaseFunction {
             return expandArrayValueObject(criteriaMaxRowLength, criteriaMaxColumnLength, ErrorValueObject.create(ErrorType.VALUE));
         }
 
-        const booleanResults = getBooleanResults(_variants, criteriaMaxRowLength, criteriaMaxColumnLength, true);
-
-        return this._aggregateResults(booleanResults);
-    }
-
-    private _aggregateResults(booleanResults: BaseValueObject[][]): BaseValueObject {
-        const results = booleanResults.map((row) => {
-            return row.map((booleanResult) => {
-                return countTrueValue(booleanResult as ArrayValueObject);
-            });
+        const results = getPairedRangeAndCriteriaResult(_variants, {
+            formulaName: 'COUNTIFS',
+            maxRowLength: criteriaMaxRowLength,
+            maxColumnLength: criteriaMaxColumnLength,
+            isNumberSensitive: true,
         });
 
         if (results.length === 1 && results[0].length === 1) {
@@ -79,14 +74,44 @@ export class Countifs extends BaseFunction {
             column: this.column,
         });
     }
-}
 
-export function countTrueValue(array: ArrayValueObject) {
-    let count = 0;
-    array.iterator((value) => {
-        if (value?.isBoolean() && value.getValue() === true) {
-            count++;
-        }
-    });
-    return NumberValueObject.create(count);
+    private _legacyImplicitDerivedCriteria(variants: FunctionVariantType[]): FunctionVariantType[] {
+        return variants.map((variant, index) => {
+            if (index % 2 === 0 || !variant.isArray()) {
+                return variant;
+            }
+
+            const array = variant as ArrayValueObject;
+            if (array.usesInvertedIndexCache()) {
+                return variant;
+            }
+
+            const startRow = array.getCurrentRow();
+            const startColumn = array.getCurrentColumn();
+            if (startRow < 0 || startColumn < 0) {
+                return variant;
+            }
+
+            const rowCount = array.getRowCount();
+            const columnCount = array.getColumnCount();
+            let rowIndex = -1;
+            let columnIndex = -1;
+            if (rowCount === 1) {
+                rowIndex = 0;
+                columnIndex = this.column - startColumn;
+            } else if (columnCount === 1) {
+                rowIndex = this.row - startRow;
+                columnIndex = 0;
+            } else {
+                rowIndex = this.row - startRow;
+                columnIndex = this.column - startColumn;
+            }
+
+            if (rowIndex < 0 || rowIndex >= rowCount || columnIndex < 0 || columnIndex >= columnCount) {
+                return variant;
+            }
+
+            return array.get(rowIndex, columnIndex) as FunctionVariantType || variant;
+        });
+    }
 }

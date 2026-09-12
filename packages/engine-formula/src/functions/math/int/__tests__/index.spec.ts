@@ -19,7 +19,7 @@ import { ErrorType } from '../../../../basics/error-type';
 import { ArrayValueObject, transformToValueObject } from '../../../../engine/value-object/array-value-object';
 import { ErrorValueObject } from '../../../../engine/value-object/base-value-object';
 import { BooleanValueObject, NullValueObject, NumberValueObject, StringValueObject } from '../../../../engine/value-object/primitive-object';
-import { getObjectValue } from '../../../__tests__/create-function-test-bed';
+import { getObjectValue } from '../../../util';
 import { FUNCTION_NAMES_MATH } from '../../function-names';
 import { Int } from '../index';
 
@@ -31,6 +31,12 @@ describe('Test int function', () => {
             const number = NumberValueObject.create(8.9);
             const result = testFunction.calculate(number);
             expect(getObjectValue(result)).toBe(8);
+        });
+
+        it('Value is near integer from floating point arithmetic', () => {
+            const number = NumberValueObject.create(5.999999999999999);
+            const result = testFunction.calculate(number);
+            expect(getObjectValue(result)).toBe(6);
         });
 
         it('Value is number negative', () => {

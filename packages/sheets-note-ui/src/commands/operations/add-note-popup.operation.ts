@@ -31,7 +31,7 @@ export const AddNotePopupOperation: ICommand = {
         const notePopupService = accessor.get(SheetsNotePopupService);
         const univerInstanceService = accessor.get(IUniverInstanceService);
 
-        const workbook = univerInstanceService.getCurrentUnitForType<Workbook>(UniverInstanceType.UNIVER_SHEET);
+        const workbook = univerInstanceService.getCurrentUnitOfType<Workbook>(UniverInstanceType.UNIVER_SHEET);
         if (!workbook) {
             return false;
         }
@@ -50,7 +50,7 @@ export const AddNotePopupOperation: ICommand = {
             row: primary.actualRow,
             col: primary.actualColumn,
             temp: false,
-            trigger: params?.trigger,
+            trigger: params?.trigger ?? 'add-note',
         });
 
         return true;

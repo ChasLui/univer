@@ -14,8 +14,8 @@
  * limitations under the License.
  */
 
-export type { IUniverRPCMainThreadConfig, IUniverRPCWorkerThreadConfig } from './controllers/config.schema';
-export { PLUGIN_CONFIG_KEY_MAIN_THREAD, PLUGIN_CONFIG_KEY_WORKER_THREAD } from './controllers/config.schema';
+export type { IUniverRPCMainThreadConfig, IUniverRPCWorkerThreadConfig } from './config/config';
+export { PLUGIN_CONFIG_KEY_MAIN_THREAD, PLUGIN_CONFIG_KEY_WORKER_THREAD } from './config/config';
 export { DataSyncPrimaryController } from './controllers/data-sync/data-sync-primary.controller';
 export { DataSyncReplicaController } from './controllers/data-sync/data-sync-replica.controller';
 export {
@@ -31,4 +31,5 @@ export {
 } from './services/remote-instance/remote-instance.service';
 export { IRemoteSyncService } from './services/remote-instance/remote-instance.service';
 export { ChannelService, IRPCChannelService } from './services/rpc/channel.service';
-export { ChannelClient, ChannelServer, fromModule, type IMessageProtocol, toModule } from './services/rpc/rpc.service';
+export { ChannelClient, ChannelServer, fromModule, toModule } from './services/rpc/rpc.service';
+export type { IMessageProtocol } from './services/rpc/rpc.service';

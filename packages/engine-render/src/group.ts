@@ -16,7 +16,6 @@
 
 import type { Nullable } from '@univerjs/core';
 import type { CURSOR_TYPE } from './basics/const';
-
 import type { IViewportInfo } from './basics/vector2';
 import type { UniverRenderingContext } from './context';
 import { sortRules } from '@univerjs/core';
@@ -26,8 +25,8 @@ import { getGroupState, transformObjectOutOfGroup } from './basics/group-transfo
 import { isString } from './basics/tools';
 
 export class Group extends BaseObject {
-    private _objects: BaseObject[] = [];
-    private _selfSizeMode = false;
+    protected _objects: BaseObject[] = [];
+    protected _selfSizeMode = false;
 
     constructor(key?: string, ...objects: BaseObject[]) {
         super(key);
@@ -46,21 +45,6 @@ export class Group extends BaseObject {
         if (this._selfSizeMode) {
             return super.getState();
         }
-        // let groupLeft = Number.MAX_SAFE_INTEGER;
-        // let groupTop = Number.MAX_SAFE_INTEGER;
-        // let groupRight = Number.MIN_SAFE_INTEGER;
-        // let groupBottom = Number.MIN_SAFE_INTEGER;
-
-        // this._objects.forEach((o) => {
-        //     const { left, top, width, height } = o;
-        //     groupLeft = Math.min(groupLeft, left);
-        //     groupTop = Math.min(groupTop, top);
-        //     groupRight = Math.max(groupRight, left + width);
-        //     groupBottom = Math.max(groupBottom, top + height);
-        // });
-
-        // const groupWidth = groupRight - groupLeft;
-        // const groupHeight = groupBottom - groupTop;
 
         return getGroupState(this.left, this.top, this._objects.map((o) => o.getState()));
     }
@@ -248,6 +232,7 @@ export class Group extends BaseObject {
     override render(ctx: UniverRenderingContext, bounds: IViewportInfo) {
         ctx.save();
         const m = this.transform.getMatrix();
+
         ctx.transform(m[0], m[1], m[2], m[3], m[4], m[5]);
         const objects = this.getObjectsByOrder();
 

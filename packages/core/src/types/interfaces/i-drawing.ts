@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import type { IAbsoluteTransform } from '../../shared/shape';
+import type { IAbsoluteTransform, IGroupBaseBound } from '../../shared/shape';
 import type { Nullable } from '../../shared/types';
 import type { BooleanNumber } from '../enum/text-style';
 
@@ -84,6 +84,10 @@ export enum DrawingTypeEnum {
      * Dom element, allows inserting HTML elements as floating objects into the document
      */
     DRAWING_DOM = 8,
+    /**
+     * Block element, allows host products to place embeddable unit-backed blocks as drawing objects.
+     */
+    DRAWING_BLOCK = 9,
 }
 
 export type DrawingType = DrawingTypeEnum | number;
@@ -113,7 +117,20 @@ export interface ITransformStateDisableOption {
     borderEnabled?: boolean;
 }
 
-export interface ITransformState extends IAbsoluteTransform, IRotationSkewFlipTransform, ITransformStateDisableOption {}
+export interface ITransformState extends IAbsoluteTransform, IRotationSkewFlipTransform, ITransformStateDisableOption { }
+
+export interface IDrawingObjectLocks {
+    /**
+     * Prevent selecting the drawing directly from the canvas. Layer/object panels may still select it for management.
+     */
+    noSelect?: boolean;
+    noMove?: boolean;
+    noResize?: boolean;
+    noRotate?: boolean;
+    noTextEdit?: boolean;
+    noEditPoints?: boolean;
+    noChangeAspect?: boolean;
+}
 
 export interface IDrawingParam extends IDrawingSearch {
     drawingType: DrawingType;
@@ -124,6 +141,62 @@ export interface IDrawingParam extends IDrawingSearch {
     isMultiTransform?: BooleanNumber;
     groupId?: string;
     allowTransform?: boolean;
+    /**
+     * The base bound of the group, used to calculate the relative position of children in the group.
+     * It is only used when drawingType is DRAWING_GROUP.
+     */
+    groupBaseBound?: Nullable<IGroupBaseBound>;
+    /**
+     * The drawing element is hidden when render
+     */
+    hidden?: boolean;
+    name?: string;
+    description?: string;
+    /**
+     * Compatibility shortcut for whether the drawing can be selected from the canvas.
+     * Prefer locks.noSelect for fine-grained behavior when available.
+     */
+    selectable?: boolean;
+    locks?: IDrawingObjectLocks;
 }
 
+/**
+ * Describes a single group node's direct children in a group hierarchy.
+ */
+export interface IDrawingGroupNestedIds {
+    /** The drawing ID of the group itself. */
+    drawingId: string;
+    /**
+     * The drawing IDs of the direct children of this group (both group and
+     * non-group children). Does not include deeply-nested descendants.
+     */
+    children?: string[];
+}
+
+/**
+ * A flattened representation of a nested group hierarchy, produced by a
+ * post-order DFS traversal so that every child always appears before its
+ * parent in the respective arrays.
+ */
+export interface IDrawingGroupNestedParam {
+    /**
+     * A map from each group's drawingId to its {@link IDrawingGroupNestedIds}
+     * descriptor. Covers the root group and every nested sub-group. Look up
+     * any group's direct children in O(1) via `nestedIdRecord[groupId].children`.
+     */
+    nestedIdRecord: Record<string, IDrawingGroupNestedIds>;
+    /**
+     * All non-group (leaf) drawing params that belong anywhere in the group
+     * hierarchy. Post-order: a leaf always appears before the group that
+     * directly contains it.
+     */
+    flatChildren?: IDrawingParam[];
+    /**
+     * All group drawing params in the hierarchy (including the root group).
+     * Post-order: nested child groups appear before their parent group, so
+     * callers can safely iterate in order without dependency issues.
+     * The root group is always the last element.
+     */
+    groups: IDrawingParam[];
+}
 // #endregion

@@ -14,9 +14,8 @@
  * limitations under the License.
  */
 
-import type { IKeyValue, ITransformState, Nullable } from '@univerjs/core';
+import type { IGroupBaseBound, ITransformState, Nullable } from '@univerjs/core';
 import type { IDragEvent, IMouseEvent, IPointerEvent, IWheelEvent } from './basics/i-events';
-
 import type { IObjectFullState, ITransformChangeState } from './basics/interfaces';
 import type { ITransformerConfig } from './basics/transformer-config';
 import type { IViewportInfo, Vector2 } from './basics/vector2';
@@ -25,6 +24,7 @@ import type { Engine } from './engine';
 import type { Layer } from './layer';
 import type { Scene } from './scene';
 import { Disposable, EventSubject } from '@univerjs/core';
+import { getRenderTransformBaseOnParentBound, getRotatedBoundInGroup } from './basics';
 import { CURSOR_TYPE, RENDER_CLASS_TYPE } from './basics/const';
 import { TRANSFORM_CHANGE_OBSERVABLE_TYPE } from './basics/interfaces';
 import { generateRandomKey, toPx } from './basics/tools';
@@ -53,11 +53,13 @@ export enum ObjectType {
     RECT,
     CIRCLE,
     CHART,
+    DRAWING_DOM,
 }
 
 export abstract class BaseObject extends Disposable {
     groupKey?: string;
     isInGroup: boolean = false;
+    isDrawingObject: boolean = false;
 
     objectType: ObjectType = ObjectType.UNKNOWN;
 
@@ -127,7 +129,7 @@ export abstract class BaseObject extends Disposable {
 
     private _debounceParentDirty: boolean = true;
 
-    private _transform = new Transform();
+    protected _transform = new Transform();
 
     private _cursor: CURSOR_TYPE = CURSOR_TYPE.DEFAULT;
 
@@ -253,11 +255,15 @@ export abstract class BaseObject extends Disposable {
     get ancestorGroup() {
         let group: Nullable<BaseObject> = null;
         let parent = this.getParent();
-        while (parent != null) {
+        while (parent != null && parent) {
             if (parent.classType === RENDER_CLASS_TYPE.GROUP) {
                 group = parent;
             }
-            parent = parent.getParent();
+            if (parent.classType === RENDER_CLASS_TYPE.GROUP) {
+                parent = parent.getParent();
+            } else {
+                parent = null;
+            }
         }
         return group;
     }
@@ -557,7 +563,7 @@ export abstract class BaseObject extends Disposable {
         optionKeys.forEach((pKey) => {
             if (option[pKey as keyof IObjectFullState] !== undefined) {
                 preKeys[pKey as keyof IObjectFullState] = this[pKey as keyof BaseObject];
-                (this as IKeyValue)[pKey] = option[pKey as keyof IObjectFullState];
+                (this as Record<string, any>)[pKey] = option[pKey as keyof IObjectFullState];
             }
         });
 
@@ -596,6 +602,79 @@ export abstract class BaseObject extends Disposable {
             skewY: this.skewY,
             flipX: this.flipX,
             flipY: this.flipY,
+        };
+    }
+
+    /**
+     * Returns the flip state after composing this object with every ancestor
+     * drawing group whose transform participates in rendering.
+     */
+    getEffectiveFlipState(): { flipX: boolean; flipY: boolean } {
+        let flipX = this.flipX;
+        let flipY = this.flipY;
+        let isInGroup = this.isInGroup;
+        let parent = this.getParent();
+
+        while (isInGroup && parent?.classType === RENDER_CLASS_TYPE.GROUP) {
+            flipX = flipX !== Boolean(parent.flipX);
+            flipY = flipY !== Boolean(parent.flipY);
+            isInGroup = Boolean(parent.isInGroup);
+            parent = parent.getParent();
+        }
+
+        return { flipX, flipY };
+    }
+
+    getRealBound(): IGroupBaseBound {
+        let { width: realWidth, height: realHeight, left: realLeft, top: realTop } = this;
+        let baseBound;
+        if (this.isInGroup && this.parent?.classType === RENDER_CLASS_TYPE.GROUP && this.parent?.getBaseBound) {
+            baseBound = this.parent.getBaseBound();
+        }
+        if (baseBound) {
+            const parentState = this.getParent();
+            const parentRealBound = typeof parentState.getRealBound === 'function'
+                ? parentState.getRealBound()
+                : parentState;
+            const parentBound = {
+                top: parentRealBound.top || 0,
+                left: parentRealBound.left,
+                width: parentRealBound.width || 0,
+                height: parentRealBound.height || 0,
+            };
+            const rotatedBound = getRotatedBoundInGroup(
+                { width: realWidth, height: realHeight, left: realLeft, top: realTop },
+                this.angle
+            );
+            const mappedRotatedBound = getRenderTransformBaseOnParentBound(baseBound, parentBound, rotatedBound);
+            const normalizedAngle = ((this.angle % 360) + 360) % 360;
+            const swapsAxes =
+                (normalizedAngle >= 45 && normalizedAngle < 135) ||
+                (normalizedAngle >= 225 && normalizedAngle < 315);
+            const mappedCenterX = mappedRotatedBound.left + mappedRotatedBound.width / 2;
+            const mappedCenterY = mappedRotatedBound.top + mappedRotatedBound.height / 2;
+
+            realWidth = swapsAxes ? mappedRotatedBound.height : mappedRotatedBound.width;
+            realHeight = swapsAxes ? mappedRotatedBound.width : mappedRotatedBound.height;
+            realLeft = mappedCenterX - realWidth / 2 - parentBound.left - parentBound.width / 2;
+            realTop = mappedCenterY - realHeight / 2 - parentBound.top - parentBound.height / 2;
+
+            // const isParentFlipX = this.parent?.flipX;
+            // const isParentFlipY = this.parent?.flipY;
+            // const parentCenterX = parentBound.left + parentBound.width / 2;
+            // const parentCenterY = parentBound.top + parentBound.height / 2;
+            // if (isParentFlipX) {
+            //     realLeft = 2 * parentCenterX - realLeft;
+            // }
+            // if (isParentFlipY) {
+            //     realTop = 2 * parentCenterY - realTop;
+            // }
+        }
+        return {
+            left: realLeft,
+            top: realTop,
+            width: realWidth,
+            height: realHeight,
         };
     }
 
@@ -800,7 +879,7 @@ export abstract class BaseObject extends Disposable {
     }
 
     toJson() {
-        const props: IKeyValue = {};
+        const props: Record<string, any> = {};
         BASE_OBJECT_ARRAY.forEach((key) => {
             if (this[key as keyof BaseObject]) {
                 props[key] = this[key as keyof BaseObject];

@@ -15,7 +15,7 @@
  */
 
 import type { Injector, Nullable, Univer, Workbook } from '@univerjs/core';
-import type { IDeltaRowHeightCommand, ISetRowHeightCommandParams } from '../set-worksheet-row-height.command';
+import type { IDeltaRowHeightCommandParams, ISetRowHeightCommandParams } from '../set-worksheet-row-height.command';
 import {
     BooleanNumber,
     ICommandService,
@@ -46,12 +46,12 @@ describe('Test set row height commands', () => {
     let commandService: ICommandService;
 
     function getRowHeight(row: number): number {
-        const worksheet = get(IUniverInstanceService).getCurrentUnitForType<Workbook>(UniverInstanceType.UNIVER_SHEET)!.getActiveSheet()!;
+        const worksheet = get(IUniverInstanceService).getCurrentUnitOfType<Workbook>(UniverInstanceType.UNIVER_SHEET)!.getActiveSheet()!;
         return worksheet.getRowHeight(row);
     }
 
     function getRowIsAutoHeight(row: number): Nullable<BooleanNumber> {
-        const worksheet = get(IUniverInstanceService).getCurrentUnitForType<Workbook>(UniverInstanceType.UNIVER_SHEET)!.getActiveSheet()!;
+        const worksheet = get(IUniverInstanceService).getCurrentUnitOfType<Workbook>(UniverInstanceType.UNIVER_SHEET)!.getActiveSheet()!;
         const rowManager = worksheet.getRowManager();
         const rowInfo = rowManager.getRow(row);
 
@@ -70,7 +70,7 @@ describe('Test set row height commands', () => {
         commandService.registerCommand(SetWorksheetRowHeightMutation);
         commandService.registerCommand(SetWorksheetRowIsAutoHeightMutation);
 
-        const worksheet = get(IUniverInstanceService).getCurrentUnitForType<Workbook>(UniverInstanceType.UNIVER_SHEET)!.getActiveSheet()!;
+        const worksheet = get(IUniverInstanceService).getCurrentUnitOfType<Workbook>(UniverInstanceType.UNIVER_SHEET)!.getActiveSheet()!;
         const maxColumn = worksheet.getMaxColumns() - 1;
         const selectionManager = get(SheetsSelectionsService);
 
@@ -108,7 +108,7 @@ describe('Test set row height commands', () => {
         it('Should change all row selections when anchor row is selected', async () => {
             expect(getRowHeight(1)).toBe(24);
 
-            await commandService.executeCommand<IDeltaRowHeightCommand>(DeltaRowHeightCommand.id, {
+            await commandService.executeCommand<IDeltaRowHeightCommandParams>(DeltaRowHeightCommand.id, {
                 deltaY: -5,
                 anchorRow: 5,
             });
@@ -134,7 +134,7 @@ describe('Test set row height commands', () => {
             expect(getRowHeight(1)).toBe(24);
             expect(getRowHeight(7)).toBe(24);
 
-            await commandService.executeCommand<IDeltaRowHeightCommand>(DeltaRowHeightCommand.id, {
+            await commandService.executeCommand<IDeltaRowHeightCommandParams>(DeltaRowHeightCommand.id, {
                 deltaY: -5,
                 anchorRow: 7,
             });

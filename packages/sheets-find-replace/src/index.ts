@@ -15,6 +15,7 @@
  */
 
 export { SheetReplaceCommand } from './commands/commands/sheet-replace.command';
-export type { IUniverSheetsFindReplaceConfig } from './controllers/config.schema';
+export type { IUniverSheetsFindReplaceConfig } from './config/config';
 export { SheetsFindReplaceController } from './controllers/sheet-find-replace.controller';
+export { UniverSheetsFindReplaceMobileUIPlugin } from './mobile-plugin';
 export { UniverSheetsFindReplacePlugin } from './plugin';

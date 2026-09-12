@@ -14,7 +14,6 @@
  * limitations under the License.
  */
 
-import type { IKeyValue } from '@univerjs/core';
 import type { UniverRenderingContext } from '../context';
 import type { IShapeProps } from './shape';
 import { Tools } from '@univerjs/core';
@@ -25,6 +24,14 @@ export interface ICheckboxShapeProps extends IShapeProps {
 }
 
 export const CHECK_OBJECT_ARRAY = ['checked'];
+
+export function isCheckboxGlyph(content: string): boolean {
+    return content === '\u2610' || content === '\u2611';
+}
+
+export function getCheckboxShapeSize(fontSize = 12): number {
+    return Math.ceil(fontSize * 1.2);
+}
 
 export class CheckboxShape extends Shape<ICheckboxShapeProps> {
     _checked = false;
@@ -67,7 +74,7 @@ export class CheckboxShape extends Shape<ICheckboxShapeProps> {
     }
 
     override toJson() {
-        const props: IKeyValue = {};
+        const props: Record<string, any> = {};
         CHECK_OBJECT_ARRAY.forEach((key) => {
             if (this[key as keyof CheckboxShape]) {
                 props[key] = this[key as keyof CheckboxShape];

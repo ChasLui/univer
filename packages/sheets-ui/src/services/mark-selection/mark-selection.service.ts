@@ -17,13 +17,19 @@
 import type { Workbook } from '@univerjs/core';
 import type { RenderUnit } from '@univerjs/engine-render';
 import type { ISelectionWithStyle } from '@univerjs/sheets';
-import { createIdentifier, Disposable, generateRandomId, Inject, IUniverInstanceService, ThemeService, UniverInstanceType } from '@univerjs/core';
+import {
+    createIdentifier,
+    Disposable,
+    generateRandomId,
+    Inject,
+    IUniverInstanceService,
+    ThemeService,
+    UniverInstanceType,
+} from '@univerjs/core';
 import { IRenderManagerService } from '@univerjs/engine-render';
-
+import { attachSelectionWithCoord, SheetSkeletonService } from '@univerjs/sheets';
 import { SELECTION_SHAPE_DEPTH } from '../selection/const';
 import { SelectionControl } from '../selection/selection-control';
-import { attachSelectionWithCoord } from '../selection/util';
-import { SheetSkeletonManagerService } from '../sheet-skeleton-manager.service';
 
 export interface IMarkSelectionService {
     addShape(selection: ISelectionWithStyle, exits?: string[], zIndex?: number): string | null;
@@ -43,7 +49,7 @@ interface IMarkSelectionInfo {
     exits: string[];
 }
 
-const DEFAULT_Z_INDEX = SELECTION_SHAPE_DEPTH.MARK_SELECTION; ;
+const DEFAULT_Z_INDEX = SELECTION_SHAPE_DEPTH.MARK_SELECTION;
 export const IMarkSelectionService = createIdentifier<IMarkSelectionService>('univer.mark-selection-service');
 
 /**
@@ -56,6 +62,7 @@ export class MarkSelectionService extends Disposable implements IMarkSelectionSe
 
     constructor(
         @IUniverInstanceService private readonly _currentService: IUniverInstanceService,
+        @Inject(SheetSkeletonService) private readonly _sheetSkeletonService: SheetSkeletonService,
         @IRenderManagerService private readonly _renderManagerService: IRenderManagerService,
         @Inject(ThemeService) private readonly _themeService: ThemeService
     ) {
@@ -63,7 +70,7 @@ export class MarkSelectionService extends Disposable implements IMarkSelectionSe
     }
 
     addShape(selection: ISelectionWithStyle, exits: string[] = [], zIndex: number = DEFAULT_Z_INDEX): string | null {
-        const workbook = this._currentService.getCurrentUnitForType<Workbook>(UniverInstanceType.UNIVER_SHEET)!;
+        const workbook = this._currentService.getCurrentUnitOfType<Workbook>(UniverInstanceType.UNIVER_SHEET)!;
         const subUnitId = workbook.getActiveSheet()?.getSheetId();
         if (!subUnitId) return null;
         const id = generateRandomId();
@@ -83,7 +90,7 @@ export class MarkSelectionService extends Disposable implements IMarkSelectionSe
     }
 
     addShapeWithNoFresh(selection: ISelectionWithStyle, exits: string[] = [], zIndex: number = DEFAULT_Z_INDEX): string | null {
-        const workbook = this._currentService.getCurrentUnitForType<Workbook>(UniverInstanceType.UNIVER_SHEET)!;
+        const workbook = this._currentService.getCurrentUnitOfType<Workbook>(UniverInstanceType.UNIVER_SHEET)!;
         const subUnitId = workbook.getActiveSheet()?.getSheetId();
         if (!subUnitId) return null;
         const id = generateRandomId();
@@ -100,7 +107,7 @@ export class MarkSelectionService extends Disposable implements IMarkSelectionSe
     }
 
     refreshShapes(): void {
-        const currentSheet = this._currentService.getCurrentUnitForType<Workbook>(UniverInstanceType.UNIVER_SHEET);
+        const currentSheet = this._currentService.getCurrentUnitOfType<Workbook>(UniverInstanceType.UNIVER_SHEET);
         if (!currentSheet) return;
 
         const currentUnitId = currentSheet.getUnitId();
@@ -113,10 +120,10 @@ export class MarkSelectionService extends Disposable implements IMarkSelectionSe
                 return;
             }
 
-            const renderUnit = this._renderManagerService.getRenderById(unitId) as RenderUnit;
+            const renderUnit = this._renderManagerService.getRenderUnitById(unitId) as RenderUnit;
             if (!renderUnit) return;
 
-            const skeleton = renderUnit.with(SheetSkeletonManagerService).getCurrentSkeleton();
+            const skeleton = this._sheetSkeletonService.getSkeleton(unitId, subUnitId);
             if (!skeleton) return;
 
             const { scene } = renderUnit;
@@ -129,6 +136,7 @@ export class MarkSelectionService extends Disposable implements IMarkSelectionSe
             });
             const selectionWithCoord = attachSelectionWithCoord(selection, skeleton);
             control.updateRangeBySelectionWithCoord(selectionWithCoord);
+            control.setEvent(false);
             shape.control = control;
         });
     }

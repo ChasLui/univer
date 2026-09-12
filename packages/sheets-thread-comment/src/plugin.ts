@@ -15,26 +15,48 @@
  */
 
 import type { Dependency } from '@univerjs/core';
-import type { IUniverSheetsThreadCommentConfig } from './controllers/config.schema';
-import { DependentOn, ICommandService, Inject, Injector, Plugin, touchDependencies, UniverInstanceType } from '@univerjs/core';
+import type { IUniverSheetsThreadCommentConfig } from './config/config';
+import {
+    DependentOn,
+    ICommandService,
+    IConfigService,
+    Inject,
+    Injector,
+    merge,
+    Plugin,
+    touchDependencies,
+    UniverInstanceType,
+} from '@univerjs/core';
+import { UniverSheetsPlugin } from '@univerjs/sheets';
 import { UniverThreadCommentPlugin } from '@univerjs/thread-comment';
-import { defaultPluginConfig } from './controllers/config.schema';
+import pkg from '../package.json';
+import { defaultPluginConfig, SHEETS_THREAD_COMMENT_PLUGIN_CONFIG_KEY } from './config/config';
 import { SheetsThreadCommentRefRangeController } from './controllers/sheets-thread-comment-ref-range.controller';
 import { SheetsThreadCommentResourceController } from './controllers/sheets-thread-comment-resource.controller';
 import { SheetsThreadCommentModel } from './models/sheets-thread-comment.model';
 import { SHEET_THREAD_COMMENT_BASE } from './types/const';
 
-@DependentOn(UniverThreadCommentPlugin)
+@DependentOn(UniverThreadCommentPlugin, UniverSheetsPlugin)
 export class UniverSheetsThreadCommentPlugin extends Plugin {
     static override pluginName = SHEET_THREAD_COMMENT_BASE;
+    static override packageName = pkg.name;
+    static override version = pkg.version;
     static override type = UniverInstanceType.UNIVER_SHEET;
 
     constructor(
         private readonly _config: Partial<IUniverSheetsThreadCommentConfig> = defaultPluginConfig,
         @Inject(Injector) protected override _injector: Injector,
-        @Inject(ICommandService) protected _commandService: ICommandService
+        @Inject(ICommandService) protected _commandService: ICommandService,
+        @IConfigService private readonly _configService: IConfigService
     ) {
         super();
+
+        const { ...rest } = merge(
+            {},
+            defaultPluginConfig,
+            this._config
+        );
+        this._configService.setConfig(SHEETS_THREAD_COMMENT_PLUGIN_CONFIG_KEY, rest);
     }
 
     override onStarting(): void {

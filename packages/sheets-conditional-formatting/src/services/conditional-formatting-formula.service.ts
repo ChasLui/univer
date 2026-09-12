@@ -20,7 +20,6 @@ import type { IConditionalFormattingRuleConfig, IConditionFormattingRule } from 
 import { BooleanNumber, CellValueType, Disposable, Inject, ObjectMatrix, RefAlias } from '@univerjs/core';
 import { FormulaResultStatus, OtherFormulaBizType, RegisterOtherFormulaService } from '@univerjs/engine-formula';
 import { Subject } from 'rxjs';
-
 import { CFRuleType, CFSubRuleType, CFValueType } from '../base/const';
 import { ConditionalFormattingRuleModel } from '../models/conditional-formatting-rule-model';
 
@@ -153,7 +152,12 @@ export class ConditionalFormattingFormulaService extends Disposable {
         if (formulaMap.getValue(cfFormulaId, ['id'])) {
             return;
         }
-        const formulaId = this._registerOtherFormulaService.registerFormulaWithRange(unitId, subUnitId, formulaText, ranges, undefined, OtherFormulaBizType.CONDITIONAL_FORMATTING, cfId);
+        // Always sort ranges by top-left so the formula engine uses a consistent anchor (ranges[0])
+        // regardless of the call path (e.g. rule-add event vs preComputing).
+        const sortedRanges = [...ranges].sort((a, b) =>
+            a.startRow !== b.startRow ? a.startRow - b.startRow : a.startColumn - b.startColumn
+        );
+        const formulaId = this._registerOtherFormulaService.registerFormulaWithRange(unitId, subUnitId, formulaText, sortedRanges, undefined, OtherFormulaBizType.CONDITIONAL_FORMATTING, cfId);
         formulaMap.addValue({
             formulaText,
             unitId,

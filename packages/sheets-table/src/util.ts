@@ -16,8 +16,13 @@
 
 import type { ICellData, IDocumentData, IUniverInstanceService, Nullable, Workbook } from '@univerjs/core';
 import type { IDefinedNamesService } from '@univerjs/engine-formula';
-import type { TableManager } from './model/table-manager';
-import type { ITableConditionFilterItem, ITableFilterItem, ITableManualFilterItem } from './types/type';
+import type { TableManager } from './models/table-manager';
+import type {
+    ITableColorFilterItem,
+    ITableConditionFilterItem,
+    ITableFilterItem,
+    ITableManualFilterItem,
+} from './types/type';
 import { CellValueType, UniverInstanceType } from '@univerjs/core';
 import { SheetsTableButtonStateEnum, SheetsTableSortStateEnum, TableColumnFilterTypeEnum } from './types/enum';
 
@@ -93,11 +98,18 @@ export function isConditionFilter(filter: ITableFilterItem | undefined): filter 
     return filter.filterType === TableColumnFilterTypeEnum.condition;
 }
 
-export function isManualFilter(filter: ITableFilterItem | undefined): filter is ITableManualFilterItem {
+export function isManualTableFilter(filter: ITableFilterItem | undefined): filter is ITableManualFilterItem {
     if (!filter) {
         return false;
     }
     return filter.filterType === TableColumnFilterTypeEnum.manual;
+}
+
+export function isColorTableFilter(filter: ITableFilterItem | undefined): filter is ITableColorFilterItem {
+    if (!filter) {
+        return false;
+    }
+    return filter.filterType === TableColumnFilterTypeEnum.color;
 }
 
 /**

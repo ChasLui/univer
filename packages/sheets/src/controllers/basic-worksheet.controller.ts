@@ -22,6 +22,7 @@ import { AddWorksheetMergeAllCommand, AddWorksheetMergeCommand, AddWorksheetMerg
 import { AddWorksheetProtectionCommand } from '../commands/commands/add-worksheet-protection.command';
 import { SetWorksheetRangeThemeStyleCommand } from '../commands/commands/add-worksheet-range-theme.command';
 import { AppendRowCommand } from '../commands/commands/append-row.command';
+import { AutoClearContentCommand, AutoFillCommand, SheetCopyDownCommand, SheetCopyRightCommand } from '../commands/commands/auto-fill.command';
 import { ClearSelectionAllCommand } from '../commands/commands/clear-selection-all.command';
 import { ClearSelectionContentCommand } from '../commands/commands/clear-selection-content.command';
 import { ClearSelectionFormatCommand } from '../commands/commands/clear-selection-format.command';
@@ -51,6 +52,7 @@ import {
 import { InsertSheetCommand } from '../commands/commands/insert-sheet.command';
 import { MoveRangeCommand } from '../commands/commands/move-range.command';
 import { MoveColsCommand, MoveRowsCommand } from '../commands/commands/move-rows-cols.command';
+import { RefillCommand } from '../commands/commands/refill.command';
 import { RegisterWorksheetRangeThemeStyleCommand } from '../commands/commands/register-range-theme.command';
 import { RemoveDefinedNameCommand } from '../commands/commands/remove-defined-name.command';
 import { RemoveColByRangeCommand, RemoveColCommand, RemoveRowByRangeCommand, RemoveRowCommand } from '../commands/commands/remove-row-col.command';
@@ -63,7 +65,7 @@ import {
     SetBorderCommand,
     SetBorderPositionCommand,
     SetBorderStyleCommand,
-} from '../commands/commands/set-border-command';
+} from '../commands/commands/set-border.command';
 import { SetColDataCommand } from '../commands/commands/set-col-data.command';
 import {
     SetColHiddenCommand,
@@ -87,6 +89,7 @@ import {
     ResetTextColorCommand,
     SetBackgroundColorCommand,
     SetHorizontalTextAlignCommand,
+    SetShrinkToFitCommand,
     SetStyleCommand,
     SetTextColorCommand,
     SetTextRotationCommand,
@@ -128,10 +131,10 @@ import { DeleteWorksheetRangeThemeStyleMutation } from '../commands/mutations/de
 import { EmptyMutation } from '../commands/mutations/empty.mutation';
 import { InsertColMutation, InsertRowMutation } from '../commands/mutations/insert-row-col.mutation';
 import { InsertSheetMutation } from '../commands/mutations/insert-sheet.mutation';
-import { CancelMarkDirtyRowAutoHeightMutation, MarkDirtyRowAutoHeightMutation } from '../commands/mutations/mark-dirty-auto-height.mutation';
+import { MarkDirtyFilterChangeMutation } from '../commands/mutations/mark-dirty-filter-change.mutation';
 import { MoveRangeMutation } from '../commands/mutations/move-range.mutation';
 import { MoveColsMutation, MoveRowsMutation } from '../commands/mutations/move-rows-cols.mutation';
-import { RemoveNumfmtMutation, SetNumfmtMutation } from '../commands/mutations/numfmt-mutation';
+import { RemoveNumfmtMutation, SetNumfmtMutation } from '../commands/mutations/numfmt.mutation';
 import { RegisterWorksheetRangeThemeStyleMutation } from '../commands/mutations/register-range-theme.mutation';
 import { RemoveRangeThemeMutation } from '../commands/mutations/remove-range-theme.mutation';
 import { RemoveColMutation, RemoveRowMutation } from '../commands/mutations/remove-row-col.mutation';
@@ -165,6 +168,7 @@ import {
 } from '../commands/mutations/set-worksheet-row-height.mutation';
 import { ToggleGridlinesMutation } from '../commands/mutations/toggle-gridlines.mutation';
 import { UnregisterWorksheetRangeThemeStyleMutation } from '../commands/mutations/unregister-range-theme-style.mutation';
+import { CancelMarkDirtyRowAutoHeightOperation, MarkDirtyRowAutoHeightOperation } from '../commands/operations/mark-dirty-auto-height.operation';
 import { ScrollToCellOperation } from '../commands/operations/scroll-to-cell.operation';
 import { SelectRangeCommand, SetSelectionsOperation } from '../commands/operations/selection.operation';
 import { SetWorksheetActiveOperation } from '../commands/operations/set-worksheet-active.operation';
@@ -188,6 +192,11 @@ export class BasicWorksheetController extends Disposable implements IDisposable 
     ) {
         super();
 
+        /**
+         * Mutations that effect formula calculation should be registered here.
+         * Because these mutations should be synced to the worker (if the worker is enabled) to trigger the formula recalculation.
+         * SetWorksheetRowCountMutation and SetWorksheetColumnCountMutation effect reference node generation, so they should also be registered here to avoid generating incorrect reference nodes in the worker.
+         */
         ([
             SetRangeValuesMutation,
             InsertColMutation,
@@ -210,14 +219,23 @@ export class BasicWorksheetController extends Disposable implements IDisposable 
             SetRowHiddenMutation, // formula SUBTOTAL
             SetRowVisibleMutation,
 
-            MarkDirtyRowAutoHeightMutation,
-            CancelMarkDirtyRowAutoHeightMutation,
+            MarkDirtyRowAutoHeightOperation,
+            CancelMarkDirtyRowAutoHeightOperation,
             CopyWorksheetEndMutation,
+
+            SetWorksheetRowCountMutation,
+            SetWorksheetColumnCountMutation,
+
+            MarkDirtyFilterChangeMutation,
         ] as IMutation<object>[]).forEach((mutation) => {
             this._commandService.registerCommand(mutation);
             this._dataSyncPrimaryController?.registerSyncingMutations(mutation);
         });
 
+        /**
+         * Worker do not need to know about the mutations that do not effect formula calculation, so set the config to true in the worker.
+         * Default is false, which means all mutations should be registered, so the main thread do not need to care about the config and just register all mutations.
+         */
         const onlyRegisterFormulaRelatedMutations = this._configService.getConfig(ONLY_REGISTER_FORMULA_RELATED_MUTATIONS_KEY) ?? false;
         if (!onlyRegisterFormulaRelatedMutations) {
             [
@@ -288,6 +306,7 @@ export class BasicWorksheetController extends Disposable implements IDisposable 
                 SetSpecificColsVisibleCommand,
                 SetSpecificRowsVisibleCommand,
                 SetStyleCommand,
+                SetShrinkToFitCommand,
                 SetTabColorCommand,
                 SetTabColorMutation,
                 SetTextColorCommand,
@@ -312,9 +331,7 @@ export class BasicWorksheetController extends Disposable implements IDisposable 
                 // SetWorksheetColIsAutoWidthCommand,
 
                 SetWorksheetRowCountCommand,
-                SetWorksheetRowCountMutation,
                 SetWorksheetColumnCountCommand,
-                SetWorksheetColumnCountMutation,
 
                 SelectRangeCommand,
                 SetSelectionsOperation,
@@ -367,6 +384,12 @@ export class BasicWorksheetController extends Disposable implements IDisposable 
                 AddRangeThemeMutation,
                 SetRangeThemeMutation,
                 RemoveRangeThemeMutation,
+
+                AutoFillCommand,
+                SheetCopyDownCommand,
+                SheetCopyRightCommand,
+                AutoClearContentCommand,
+                RefillCommand,
 
             ].forEach((command) => this.disposeWithMe(this._commandService.registerCommand(command)));
         }

@@ -17,6 +17,7 @@
 import type { BaseReferenceObject } from '../../../engine/reference-object/base-reference-object';
 import type { ArrayValueObject } from '../../../engine/value-object/array-value-object';
 import type { BaseValueObject } from '../../../engine/value-object/base-value-object';
+import { MAX_COLUMN_COUNT, MAX_ROW_COUNT } from '@univerjs/core';
 import { ErrorType } from '../../../basics/error-type';
 import { regexTestColumn, regexTestRow, regexTestSingeRange } from '../../../basics/regex';
 import { operatorToken } from '../../../basics/token';
@@ -24,16 +25,29 @@ import { CellReferenceObject } from '../../../engine/reference-object/cell-refer
 import { ColumnReferenceObject } from '../../../engine/reference-object/column-reference-object';
 import { RangeReferenceObject } from '../../../engine/reference-object/range-reference-object';
 import { RowReferenceObject } from '../../../engine/reference-object/row-reference-object';
-
 import { deserializeRangeForR1C1 } from '../../../engine/utils/r1c1-reference';
 import { deserializeRangeWithSheetWithCache } from '../../../engine/utils/reference-cache';
 import { ErrorValueObject } from '../../../engine/value-object/base-value-object';
 import { BaseFunction } from '../../base-function';
 
+const INDIRECT_ERROR_LITERALS = [
+    ErrorType.NULL,
+    ErrorType.DIV_BY_ZERO,
+    ErrorType.VALUE,
+    ErrorType.REF,
+    ErrorType.NAME,
+    ErrorType.NUM,
+    ErrorType.NA,
+    ErrorType.CYCLE,
+    ErrorType.CALC,
+] as const;
+
 export class Indirect extends BaseFunction {
     override minParams = 1;
 
     override maxParams = 2;
+
+    override needsUnitReferenceResolver = true;
 
     override isAddress() {
         return true;
@@ -80,6 +94,11 @@ export class Indirect extends BaseFunction {
             return ErrorValueObject.create(ErrorType.REF);
         }
 
+        const embeddedError = this._matchErrorLiteral(refTextValue);
+        if (embeddedError != null) {
+            return ErrorValueObject.create(embeddedError);
+        }
+
         const refTextV = this._convertToDefinedName(refTextValue);
 
         if (a1Value === 0) {
@@ -89,6 +108,7 @@ export class Indirect extends BaseFunction {
 
             const rangeReferenceObject = new RangeReferenceObject(range);
 
+            rangeReferenceObject.setUnitQualifier(unitId);
             rangeReferenceObject.setForcedUnitIdDirect(unitId);
             rangeReferenceObject.setForcedSheetName(sheetName);
 
@@ -110,12 +130,13 @@ export class Indirect extends BaseFunction {
 
         const { range, sheetName, unitId } = gridRange;
 
-        if (Number.isNaN(range.startRow) || range.endRow + 1 > 1048576 || Number.isNaN(range.startColumn) || range.endColumn + 1 > 16384) {
+        if (Number.isNaN(range.startRow) || range.endRow + 1 > MAX_ROW_COUNT || Number.isNaN(range.startColumn) || range.endColumn + 1 > MAX_COLUMN_COUNT) {
             return ErrorValueObject.create(ErrorType.REF);
         }
 
         const rangeReferenceObject = new RangeReferenceObject(range);
 
+        rangeReferenceObject.setUnitQualifier(unitId);
         rangeReferenceObject.setForcedUnitIdDirect(unitId);
         rangeReferenceObject.setForcedSheetName(sheetName);
 
@@ -125,6 +146,18 @@ export class Indirect extends BaseFunction {
     private _setDefault(object: BaseReferenceObject) {
         if (this.unitId == null || this.subUnitId == null) {
             return ErrorValueObject.create(ErrorType.REF);
+        }
+        const unitQualifier = object.getUnitQualifier();
+        if (unitQualifier && this._unitReferenceResolver) {
+            const resolution = this._unitReferenceResolver.resolve({
+                hostUnitId: this.unitId,
+                qualifier: unitQualifier,
+                referenceKind: 'a1',
+            });
+            if (typeof resolution === 'string') {
+                return ErrorValueObject.create(resolution);
+            }
+            object.setForcedUnitIdDirect(resolution.unitId);
         }
         object.setDefaultUnitId(this.unitId);
         object.setDefaultSheetId(this.subUnitId);
@@ -154,5 +187,10 @@ export class Indirect extends BaseFunction {
         }
 
         return formulaOrRefString;
+    }
+
+    private _matchErrorLiteral(refText: string) {
+        const normalizedRefText = refText.toUpperCase();
+        return INDIRECT_ERROR_LITERALS.find((errorType) => normalizedRefText.includes(errorType));
     }
 }

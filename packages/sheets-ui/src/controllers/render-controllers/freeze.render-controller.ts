@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import type { ICommandInfo, IFreeze, IRange, IWorksheetData, Nullable, Workbook } from '@univerjs/core';
+import type { ICommandInfo, IFreeze, IRange, Nullable, Workbook } from '@univerjs/core';
 import type { IMouseEvent, IPointerEvent, IRenderContext, IRenderModule, Viewport } from '@univerjs/engine-render';
 import type {
     IInsertColCommandParams,
@@ -101,6 +101,8 @@ export const FREEZE_COLUMN_MAIN_NAME = '__SpreadsheetFreezeColumnMainName__';
 export const FREEZE_COLUMN_HEADER_NAME = '__SpreadsheetFreezeColumnHeaderName__';
 
 const FREEZE_SIZE_NORMAL = 2;
+
+const FREEZE_SIZE_BOUNDARY_RATIO = 1.5;
 
 const AUXILIARY_CLICK_HIDDEN_OBJECT_TRANSPARENCY = 0.01;
 
@@ -192,7 +194,7 @@ export class HeaderFreezeRenderController extends Disposable implements IRenderM
         this._zoomRefresh();
     }
 
-    // eslint-disable-next-line max-lines-per-function, complexity
+    // eslint-disable-next-line max-lines-per-function
     private _createFreeze(
         freezeDirectionType: FREEZE_DIRECTION_TYPE = FREEZE_DIRECTION_TYPE.ROW,
         freezeConfig?: IFreeze
@@ -207,20 +209,9 @@ export class HeaderFreezeRenderController extends Disposable implements IRenderM
         if (position == null || skeleton == null) return null;
 
         const sheetObject = this._getSheetObject()!;
-        const engine = sheetObject.engine;
-        const canvasMaxWidth = engine?.width || 0;
-        const canvasMaxHeight = engine?.height || 0;
         const scene = sheetObject.scene;
         const { startX, startY } = position;
         const { rowTotalHeight, columnTotalWidth, rowHeaderWidthAndMarginLeft, columnHeaderHeightAndMarginTop } = skeleton;
-
-        const contentWidth = canvasMaxWidth > columnTotalWidth + rowHeaderWidthAndMarginLeft
-            ? canvasMaxWidth
-            : columnTotalWidth + columnHeaderHeightAndMarginTop;
-
-        const contentHeight = canvasMaxHeight > rowTotalHeight + columnHeaderHeightAndMarginTop
-            ? canvasMaxHeight
-            : rowTotalHeight + columnHeaderHeightAndMarginTop;
 
         this._changeToRow = freezeRow;
         this._changeToColumn = freezeColumn;
@@ -233,7 +224,7 @@ export class HeaderFreezeRenderController extends Disposable implements IRenderM
 
         if (freezeDirectionType === FREEZE_DIRECTION_TYPE.ROW) {
             if (freezeRow === -1 || freezeRow === 0) {
-                freezeSize = freezeSize * 2;
+                freezeSize = freezeSize * FREEZE_SIZE_BOUNDARY_RATIO;
             }
 
             const freezeOffset = freezeSize;
@@ -254,7 +245,7 @@ export class HeaderFreezeRenderController extends Disposable implements IRenderM
 
             this._rowFreezeMainRect = new Rect(FREEZE_ROW_MAIN_NAME, {
                 fill,
-                width: contentWidth * 2 / scale,
+                width: columnTotalWidth,
                 height: freezeSize,
                 left: rowHeaderWidthAndMarginLeft,
                 top: startY - freezeOffset,
@@ -264,7 +255,7 @@ export class HeaderFreezeRenderController extends Disposable implements IRenderM
             scene.addObjects([this._rowFreezeHeaderRect, this._rowFreezeMainRect], SHEET_COMPONENT_HEADER_LAYER_INDEX);
         } else {
             if (freezeColumn === -1 || freezeColumn === 0) {
-                freezeSize = freezeSize * 2;
+                freezeSize = freezeSize * FREEZE_SIZE_BOUNDARY_RATIO;
             }
 
             const FREEZE_OFFSET = freezeSize;
@@ -286,7 +277,7 @@ export class HeaderFreezeRenderController extends Disposable implements IRenderM
             this._columnFreezeMainRect = new Rect(FREEZE_COLUMN_MAIN_NAME, {
                 fill,
                 width: freezeSize,
-                height: contentHeight * 2 / scale,
+                height: rowTotalHeight,
                 left: startX - FREEZE_OFFSET,
                 top: columnHeaderHeightAndMarginTop,
                 zIndex: 3,
@@ -1636,16 +1627,11 @@ export class HeaderFreezeRenderController extends Disposable implements IRenderM
     }
 
     private _getFreeze() {
-        const config: IWorksheetData | undefined = this._sheetSkeletonManagerService
+        return this._sheetSkeletonManagerService
             .getCurrentParam()
             ?.skeleton
-            .getWorksheetConfig();
-
-        if (config == null) {
-            return;
-        }
-
-        return config.freeze;
+            .worksheet
+            .getFreeze();
     }
 
     private _getSheetObject() {

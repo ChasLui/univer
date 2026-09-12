@@ -82,7 +82,7 @@ export class FormulaRefRangeService extends Disposable {
 
     transformFormulaByEffectCommand(unitId: string, subUnitId: string, formula: string, params: EffectRefRangeParams) {
         const sequenceNodes = this._lexerTreeBuilder.sequenceNodesBuilder(formula);
-        const currentUnit = this._univerInstanceService.getCurrentUnitForType<Workbook>(UniverInstanceType.UNIVER_SHEET)!;
+        const currentUnit = this._univerInstanceService.getCurrentUnitOfType<Workbook>(UniverInstanceType.UNIVER_SHEET)!;
         const currentSheet = currentUnit.getActiveSheet();
         const currentUnitId = currentUnit.getUnitId();
         const currentSheetId = currentSheet.getSheetId();
@@ -137,7 +137,7 @@ export class FormulaRefRangeService extends Disposable {
         const sequenceNodes = this._lexerTreeBuilder.sequenceNodesBuilder(formula);
         const disposableCollection = new DisposableCollection();
         const handleChange = (params: EffectRefRangeParams) => {
-            const currentUnit = this._univerInstanceService.getCurrentUnitForType<Workbook>(UniverInstanceType.UNIVER_SHEET)!;
+            const currentUnit = this._univerInstanceService.getCurrentUnitOfType<Workbook>(UniverInstanceType.UNIVER_SHEET)!;
             const currentSheet = currentUnit.getActiveSheet();
             const currentUnitId = currentUnit.getUnitId();
             const currentSheetId = currentSheet.getSheetId();
@@ -252,22 +252,36 @@ export class FormulaRefRangeService extends Disposable {
         const formulaDeps = formulas.map((formula) => this._getFormulaDependcy(unitId, subUnitId, formula, oldRanges));
         // eslint-disable-next-line max-lines-per-function
         const handleRangeChange = (commandInfo: EffectRefRangeParams) => {
-            const orginStartRow = oldRanges[0].startRow;
-            const orginStartColumn = oldRanges[0].startColumn;
+            const effectedRanges = getSeparateEffectedRangesOnCommand(this._injector, commandInfo);
+            if (!effectedRanges) {
+                return {
+                    undos: [],
+                    redos: [],
+                };
+            }
+
+            const originStartRow = oldRanges[0].startRow;
+            const originStartColumn = oldRanges[0].startColumn;
             const deps = [{ unitId, subUnitId, ranges: oldRanges }, ...formulaDeps.flat()];
             const matchedEffectedRanges: IRange[][] = [];
-            const effectedRanges = getSeparateEffectedRangesOnCommand(this._injector, commandInfo);
+
             // 1. calculate effected ranges
             for (const { unitId: depUnitId, subUnitId: depSubUnitId, ranges } of deps) {
                 if (depUnitId === effectedRanges.unitId && depSubUnitId === effectedRanges.subUnitId) {
                     const intersectedRanges: IRange[] = [];
                     const currentStartRow = ranges[0].startRow;
                     const currentStartColumn = ranges[0].startColumn;
-                    const offsetRow = currentStartRow - orginStartRow;
-                    const offsetColumn = currentStartColumn - orginStartColumn;
+                    const offsetRow = currentStartRow - originStartRow;
+                    const offsetColumn = currentStartColumn - originStartColumn;
 
                     for (const range of effectedRanges.ranges) {
-                        const intersectedRange = ranges.map((r) => getIntersectRange(range, r)).filter(Boolean) as IRange[];
+                        const intersectedRange: IRange[] = [];
+                        for (const r of ranges) {
+                            const intersect = getIntersectRange(range, r);
+                            if (intersect) {
+                                intersectedRange.push(intersect);
+                            }
+                        }
                         if (intersectedRange.length > 0) {
                             intersectedRanges.push(...intersectedRange);
                         }
@@ -298,16 +312,16 @@ export class FormulaRefRangeService extends Disposable {
                     const range = ranges[i];
                     const currentRow = range.startRow;
                     const currentColumn = range.startColumn;
-                    const offsetRow = currentRow - orginStartRow;
-                    const offsetColumn = currentColumn - orginStartColumn;
+                    const offsetRow = currentRow - originStartRow;
+                    const offsetColumn = currentColumn - originStartColumn;
                     const transformedRange = handleCommonDefaultRangeChangeWithEffectRefCommands(range, commandInfo).sort((a, b) => a.startRow - b.startRow || a.startColumn - b.startColumn);
                     if (!transformedRange.length) {
                         continue;
                     }
                     const transformedRow = transformedRange[0].startRow;
                     const transformedColumn = transformedRange[0].startColumn;
-                    const transformedOffsetRow = transformedRow - orginStartRow;
-                    const transformedOffsetColumn = transformedColumn - orginStartColumn;
+                    const transformedOffsetRow = transformedRow - originStartRow;
+                    const transformedOffsetColumn = transformedColumn - originStartColumn;
 
                     const transformedFormulas = [];
                     for (let j = 0; j < formulas.length; j++) {
@@ -347,7 +361,7 @@ export class FormulaRefRangeService extends Disposable {
                     for (let i = 0; i < formulas.length; i++) {
                         const formula = formulas[i];
                         noEffectFormulas.push({
-                            newFormula: isFormulaString(formula) ? this._lexerTreeBuilder.moveFormulaRefOffset(formula, currentColumn - orginStartColumn, currentRow - orginStartRow) : formula,
+                            newFormula: isFormulaString(formula) ? this._lexerTreeBuilder.moveFormulaRefOffset(formula, currentColumn - originStartColumn, currentRow - originStartRow) : formula,
                             orginFormula: formula,
                         });
                     }

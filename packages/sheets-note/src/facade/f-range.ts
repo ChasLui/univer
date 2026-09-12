@@ -19,17 +19,26 @@ import type { ISheetNote } from '@univerjs/sheets-note';
 import { RemoveNoteMutation, SheetsNoteModel, UpdateNoteMutation } from '@univerjs/sheets-note';
 import { FRange } from '@univerjs/sheets/facade';
 
+export interface ICreateOrUpdateNoteOptions {
+    id?: string;
+    width: number;
+    height: number;
+    note: string;
+    show?: boolean;
+}
+
 /**
  * @ignore
  */
-export interface IFSheetsNoteRange {
+export interface IFRangeSheetsNoteMixin {
     /**
      * Get the annotation of the top-left cell in the range
      * @returns {Nullable<ISheetNote>} The annotation of the top-left cell in the range
      * @example
      * ```ts
      * const fWorkbook = univerAPI.getActiveWorkbook();
-     * const fWorksheet = fWorkbook.getActiveSheet();
+     * const fWorksheet = fWorkbook.getSheetByName('Sheet1');
+     * if (!fWorksheet) return;
      * const fRange = fWorksheet.getRange('A1:D10');
      * const note = fRange.getNote();
      * console.log(note);
@@ -38,12 +47,13 @@ export interface IFSheetsNoteRange {
     getNote(): Nullable<ISheetNote>;
     /**
      * Create or update the annotation of the top-left cell in the range
-     * @param {ISheetNote} note The annotation to create or update
+     * @param {ICreateOrUpdateNoteOptions} note The annotation to create or update
      * @returns {FRange} This range for method chaining
      * @example
      * ```ts
      * const fWorkbook = univerAPI.getActiveWorkbook();
-     * const fWorksheet = fWorkbook.getActiveSheet();
+     * const fWorksheet = fWorkbook.getSheetByName('Sheet1');
+     * if (!fWorksheet) return;
      * const fRange = fWorksheet.getRange('A1');
      * fRange.createOrUpdateNote({
      *   note: 'This is a note',
@@ -53,14 +63,15 @@ export interface IFSheetsNoteRange {
      * });
      * ```
      */
-    createOrUpdateNote(note: ISheetNote): FRange;
+    createOrUpdateNote(note: ICreateOrUpdateNoteOptions): FRange;
     /**
      * Delete the annotation of the top-left cell in the range
      * @returns {FRange} This range for method chaining
      * @example
      * ```ts
      * const fWorkbook = univerAPI.getActiveWorkbook();
-     * const fWorksheet = fWorkbook.getActiveSheet();
+     * const fWorksheet = fWorkbook.getSheetByName('Sheet1');
+     * if (!fWorksheet) return;
      * const notes = fWorksheet.getNotes();
      * console.log(notes);
      *
@@ -74,8 +85,8 @@ export interface IFSheetsNoteRange {
     deleteNote(): FRange;
 }
 
-export class FSheetsNoteRangeMixin extends FRange implements IFSheetsNoteRange {
-    override createOrUpdateNote(note: ISheetNote): FRange {
+export class FRangeSheetsNoteMixin extends FRange implements IFRangeSheetsNoteMixin {
+    override createOrUpdateNote(note: ICreateOrUpdateNoteOptions): FRange {
         this._commandService.syncExecuteCommand(
             UpdateNoteMutation.id,
             {
@@ -106,12 +117,12 @@ export class FSheetsNoteRangeMixin extends FRange implements IFSheetsNoteRange {
 
     override getNote(): Nullable<ISheetNote> {
         const model = this._injector.get(SheetsNoteModel);
-        return model.getNote(this.getUnitId(), this.getSheetId(), this.getRow(), this.getColumn());
+        return model.getNote(this.getUnitId(), this.getSheetId(), { row: this.getRow(), col: this.getColumn() });
     }
 }
 
-FRange.extend(FSheetsNoteRangeMixin);
+FRange.extend(FRangeSheetsNoteMixin);
 declare module '@univerjs/sheets/facade' {
     // eslint-disable-next-line ts/naming-convention
-    interface FRange extends IFSheetsNoteRange { }
+    interface FRange extends IFRangeSheetsNoteMixin { }
 }

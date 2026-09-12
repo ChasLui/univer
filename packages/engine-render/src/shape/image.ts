@@ -14,16 +14,81 @@
  * limitations under the License.
  */
 
-import type { ISrcRect, Nullable, PresetGeometryType } from '@univerjs/core';
-
+import type { ISrcRect, Nullable } from '@univerjs/core';
 import type { IObjectFullState, ITransformChangeState, IViewportInfo } from '../basics';
 import type { UniverRenderingContext } from '../context';
 import type { Scene } from '../scene';
 import type { IShapeProps } from './shape';
 import { ObjectType } from '../base-object';
-import { RENDER_CLASS_TYPE, Vector2 } from '../basics';
+import { RENDER_CLASS_TYPE, Transform, Vector2 } from '../basics';
 import { offsetRotationAxis } from '../basics/offset-rotation-axis';
 import { Shape } from './shape';
+
+const INLINE_SVG_DATA_URL_PATTERN = /^data:image\/svg\+xml(?:;[^,]*)?,/i;
+const SVG_FILTER_REFERENCE_PATTERN = /\bfilter\s*=/i;
+const SVG_EXPENSIVE_FILTER_PATTERN = /<fe(?:Turbulence|DisplacementMap|GaussianBlur)\b/i;
+const SVG_ANIMATION_PATTERN = /<(?:animate(?:Color|Motion|Transform)?|set)\b|@keyframes\b/i;
+const RASTER_CACHE_MAX_PIXEL_COUNT = 4_000_000;
+const RASTER_CACHE_MAX_DIMENSION = 4_096;
+const RASTER_CACHE_PIXEL_RATIO_STEP = 0.5;
+
+function shouldRasterCacheSvg(source?: string): boolean {
+    const prefix = source && INLINE_SVG_DATA_URL_PATTERN.exec(source)?.[0];
+    if (!prefix) {
+        return false;
+    }
+
+    try {
+        const payload = source.slice(prefix.length);
+        const svg = prefix.toLowerCase().includes(';base64,') ? atob(payload) : decodeURIComponent(payload);
+        return !SVG_ANIMATION_PATTERN.test(svg) &&
+            SVG_FILTER_REFERENCE_PATTERN.test(svg) &&
+            SVG_EXPENSIVE_FILTER_PATTERN.test(svg);
+    } catch {
+        return false;
+    }
+}
+
+function resolveRasterCachePixelRatio(width: number, height: number, requestedPixelRatio: number): number {
+    if (width <= 0 || height <= 0) {
+        return requestedPixelRatio;
+    }
+
+    const dimensionPixelRatioLimit = Math.min(
+        RASTER_CACHE_MAX_DIMENSION / width,
+        RASTER_CACHE_MAX_DIMENSION / height
+    );
+    const pixelLimitedPixelRatio = Math.sqrt(RASTER_CACHE_MAX_PIXEL_COUNT / (width * height));
+    const pixelRatioLimit = Math.min(dimensionPixelRatioLimit, pixelLimitedPixelRatio);
+    const pixelRatio = requestedPixelRatio + RASTER_CACHE_PIXEL_RATIO_STEP > pixelRatioLimit
+        ? pixelRatioLimit
+        : requestedPixelRatio;
+    if (pixelRatio < pixelLimitedPixelRatio) {
+        return pixelRatio;
+    }
+
+    const physicalWidth = Math.floor(width * pixelLimitedPixelRatio);
+    const physicalHeight = Math.floor(RASTER_CACHE_MAX_PIXEL_COUNT / physicalWidth);
+    return Math.min(pixelRatio, (physicalWidth - 1) / width, (physicalHeight - 1) / height);
+}
+
+export interface IShapeClipBounds {
+    left: number;
+    top: number;
+    width: number;
+    height: number;
+}
+
+export interface IImageShapeClipService {
+    /**
+     * Build the shape outline path and clip the canvas context.
+     * Assumes the coordinate system has (0,0) at the top-left of the shape area.
+     * The method calls ctx.beginPath(), builds the shape path, and calls ctx.clip().
+     * @returns The actual bounding rect of the clip region, or false if no clip was built.
+     *          For multi-path shapes the bounds may extend beyond (0, 0, width, height).
+     */
+    applyShapeClip(ctx: UniverRenderingContext, prstGeom: string, width: number, height: number, adjustValues?: Nullable<Record<string, number>>): IShapeClipBounds | false;
+}
 
 export interface IImageProps extends IShapeProps {
     image?: HTMLImageElement;
@@ -38,9 +103,17 @@ export interface IImageProps extends IShapeProps {
     /**
      * 20.1.9.18 prstGeom (Preset geometry)
      */
-    prstGeom?: Nullable<PresetGeometryType>;
+    prstGeom?: Nullable<string>;
+
+    /**
+     * Adjust values for the preset geometry (e.g. corner radius for roundRect).
+     * Keys are adjust handle names, values are numeric values.
+     */
+    adjustValues?: Nullable<Record<string, number>>;
 
     opacity?: number;
+
+    clipBounds?: Nullable<IShapeClipBounds>;
 }
 
 export class Image extends Shape<IImageProps> {
@@ -52,7 +125,15 @@ export class Image extends Shape<IImageProps> {
 
     private _transformCalculateSrcRect: boolean = true;
 
+    private _clipService: Nullable<IImageShapeClipService> = null;
+
+    private _rasterCacheSource = '';
+
+    private _autoRasterCache = false;
+
     override objectType = ObjectType.IMAGE;
+
+    override isDrawingObject: boolean = true;
 
     constructor(id: string, config: IImageProps) {
         super(id, config);
@@ -62,11 +143,9 @@ export class Image extends Shape<IImageProps> {
 
         if (config.image) {
             this._native = config.image;
-            this._native.crossOrigin = 'anonymous';
             this.makeDirty(true);
         } else if (config.url) {
             this._native = document.createElement('img');
-            this._native.src = config.url;
             this._native.crossOrigin = 'anonymous';
             this._native.onload = () => {
                 config.success?.();
@@ -82,6 +161,7 @@ export class Image extends Shape<IImageProps> {
                     this.makeDirty(true);
                 }
             };
+            this._native.src = config.url;
         }
 
         this._init();
@@ -99,9 +179,40 @@ export class Image extends Shape<IImageProps> {
         return this._props.opacity ?? 1;
     }
 
+    get clipBounds() {
+        return this._props.clipBounds;
+    }
+
+    private _shouldRasterCache(): boolean {
+        const source = this._native?.src || this._props.url || '';
+        if (source !== this._rasterCacheSource) {
+            const previous = this._autoRasterCache;
+            this._rasterCacheSource = source;
+            this._autoRasterCache = shouldRasterCacheSvg(source);
+            if (previous && !this._autoRasterCache) {
+                this._releaseRenderCache();
+            }
+        }
+
+        return this._autoRasterCache;
+    }
+
     setOpacity(opacity: number) {
         this._props.opacity = opacity;
         this.makeDirty(true);
+    }
+
+    setClipBounds(clipBounds?: Nullable<IShapeClipBounds>) {
+        this._props.clipBounds = clipBounds;
+        this.makeDirty(true);
+    }
+
+    setClipService(clipService: Nullable<IImageShapeClipService>) {
+        this._clipService = clipService;
+    }
+
+    getClipService(): Nullable<IImageShapeClipService> {
+        return this._clipService;
     }
 
     override get classType(): RENDER_CLASS_TYPE {
@@ -118,10 +229,10 @@ export class Image extends Shape<IImageProps> {
         if (this._native == null) {
             this._native = document.createElement('img');
         }
-        this._native.src = url;
         this._native.onload = () => {
             this.makeDirty(true);
         };
+        this._native.src = url;
     }
 
     resetSize() {
@@ -135,8 +246,16 @@ export class Image extends Shape<IImageProps> {
         this.setSrcRect(null);
     }
 
-    setPrstGeom(prstGeom?: Nullable<PresetGeometryType>) {
+    setPrstGeom(prstGeom?: Nullable<string>) {
         this._props.prstGeom = prstGeom;
+    }
+
+    setPrstGeomAdjValues(adjValues?: Nullable<Record<string, number>>) {
+        this._props.adjustValues = adjValues;
+    }
+
+    get prstGeomAdjValues() {
+        return this._props.adjustValues;
     }
 
     setSrcRect(srcRect?: Nullable<ISrcRect>) {
@@ -270,15 +389,26 @@ export class Image extends Shape<IImageProps> {
             return this;
         }
 
+        if (!this.transform) {
+            return this;
+        }
+
+        let { width: realWidth, height: realHeight, left: realLeft, top: realTop } = this;
+
+        const realBound = this.getRealBound();
+        realWidth = realBound.width;
+        realHeight = realBound.height;
+        realLeft = realBound.left;
+        realTop = realBound.top;
         // Temporarily ignore the on-demand display of elements within a group：this.isInGroup
         if (this.isRender(bounds)) {
             const { top, left, bottom, right } = bounds!.viewBound;
 
             if (
-                this.width + this.strokeWidth + this.left < left ||
-                right < this.left ||
-                this.height + this.strokeWidth + this.top < top ||
-                bottom < this.top
+                realWidth + this.strokeWidth + realLeft < left ||
+                right < realLeft ||
+                realHeight + this.strokeWidth + realTop < top ||
+                bottom < realTop
             ) {
                 return this;
             }
@@ -286,28 +416,121 @@ export class Image extends Shape<IImageProps> {
 
         const m = this.transform.getMatrix();
         mainCtx.save();
-        mainCtx.transform(m[0], m[1], m[2], m[3], m[4], m[5]);
+        const { clipBounds } = this;
+        if (clipBounds) {
+            mainCtx.beginPath();
+            mainCtx.rect(clipBounds.left, clipBounds.top, clipBounds.width, clipBounds.height);
+            mainCtx.clip();
+        }
+        // if (this.flipX || this.flipY) {
+        //     const centerX = this.left + this.width / 2;
+        //     const centerY = this.top + this.height / 2;
+        //    mainCtx.transform(m[0], m[1], m[2], m[3], centerX, centerY);
+        // }else {
+
+        //     mainCtx.transform(m[0], m[1], m[2], m[3], m[4], m[5]);
+        // }
+        const centerX = realLeft + realWidth / 2;
+        const centerY = realTop + realHeight / 2;
+        mainCtx.transform(m[0], m[1], m[2], m[3], centerX, centerY);
         if (this.opacity !== 1) {
             mainCtx.globalAlpha = this.opacity;
         }
-        this._draw(mainCtx);
+        this._draw(mainCtx, undefined, realWidth, realHeight);
         mainCtx.restore();
         this.makeDirty(false);
         return this;
     }
 
-    protected override _draw(ctx: UniverRenderingContext) {
-        if (this._native == null) {
+    protected override _draw(ctx: UniverRenderingContext, _bounds?: IViewportInfo, renderWidth?: number, renderHeight?: number) {
+        const native = this._native;
+        if (native == null) {
             return;
         }
+        const w = renderWidth ?? this.width;
+        const h = renderHeight ?? this.height;
+
+        if (this._shouldRasterCache()) {
+            const transform = ctx.getTransform();
+            const requestedPixelRatio = Math.max(
+                Math.hypot(transform.a, transform.b),
+                Math.hypot(transform.c, transform.d)
+            );
+            const pixelRatio = resolveRasterCachePixelRatio(
+                w,
+                h,
+                Math.ceil(requestedPixelRatio / RASTER_CACHE_PIXEL_RATIO_STEP) * RASTER_CACHE_PIXEL_RATIO_STEP
+            );
+            this._renderWithCache(
+                ctx,
+                { left: -w / 2, top: -h / 2, right: w / 2, bottom: h / 2 },
+                (cacheContext) => this._drawNative(cacheContext, native, w, h),
+                pixelRatio
+            );
+            return;
+        }
+
+        this._drawNative(ctx, native, w, h);
+    }
+
+    private _drawNative(ctx: UniverRenderingContext, native: HTMLImageElement, w: number, h: number): void {
+        // Shape clip: when prstGeom is set and a clip service is available,
+        // clip the image to the shape outline (e.g. ellipse, roundRect, etc.)
+        if (this.prstGeom && this._clipService) {
+            ctx.save();
+            ctx.translate(-w / 2, -h / 2); // move origin to top-left for clip path
+            // Clip to bounding rect first so that any shape path overshooting the
+            // bounding box (e.g. due to control-point curves) is safely contained.
+            ctx.beginPath();
+            // ctx.rect(0, 0, w, h);
+            // ctx.clip();
+            const clipBounds = this._clipService.applyShapeClip(ctx, this.prstGeom, w, h, this.prstGeomAdjValues);
+            if (clipBounds) {
+                // Use the actual clip bounds for image drawing — for multi-path shapes
+                // (e.g. cloudCallout) the clip region may extend beyond (0, 0, w, h).
+                const drawLeft = clipBounds.left;
+                const drawTop = clipBounds.top;
+                const drawWidth = clipBounds.width;
+                const drawHeight = clipBounds.height;
+                if (!this._renderByCropper && this.srcRect) {
+                    const { left = 0, top = 0, right = 0, bottom = 0 } = this.srcRect;
+                    // srcRect offsets live in the image's original frame. Scale
+                    // them with the rendered frame (not just the shape clip), so
+                    // images resized by a drawing group keep the same crop.
+                    const scaleW = this.width > 0 ? drawWidth / this.width : 1;
+                    const scaleH = this.height > 0 ? drawHeight / this.height : 1;
+                    ctx.drawImage(
+                        native,
+                        drawLeft - left * scaleW,
+                        drawTop - top * scaleH,
+                        drawWidth + (right + left) * scaleW,
+                        drawHeight + (bottom + top) * scaleH
+                    );
+                } else {
+                    ctx.drawImage(native, drawLeft, drawTop, drawWidth, drawHeight);
+                }
+                ctx.restore();
+                return;
+            }
+            ctx.restore();
+        }
+
         if (!this._renderByCropper && this.srcRect) {
             const { left = 0, top = 0, right = 0, bottom = 0 } = this.srcRect;
+            const scaleW = this.width > 0 ? w / this.width : 1;
+            const scaleH = this.height > 0 ? h / this.height : 1;
             ctx.beginPath();
-            ctx.rect(0, 0, this.width, this.height);
+            ctx.rect(-w / 2, -h / 2, w, h);
             ctx.clip();
-            ctx.drawImage(this._native, -left, -top, this.width + right + left, this.height + bottom + top);
+            ctx.drawImage(
+                native,
+                -left * scaleW - w / 2,
+                -top * scaleH - h / 2,
+                w + (right + left) * scaleW,
+                h + (bottom + top) * scaleH
+            );
         } else {
-            ctx.drawImage(this._native, 0, 0, this.width, this.height);
+            ctx.drawImage(native, -w / 2, -h / 2, w, h);
         }
     }
 
@@ -360,5 +583,53 @@ export class Image extends Shape<IImageProps> {
                 bottom: newBottom,
             });
         }
+    }
+
+    override set transform(trans: Transform) {
+        this._transform = trans;
+    }
+
+    override get transform() {
+        // when active sheet is changed, maybe the image is reused, the transform need to be recalculated by transform
+        if (!this._transform) {
+            this._setTransForm();
+        }
+
+        const transform = this._transform.clone();
+        return this.transformForAngle(transform);
+    }
+
+    override isHit(coord: Vector2) {
+        // Build the same effective transform used in render():
+        // Must use realBound to match render() method's coordinate system
+        // [m[0], m[1], m[2], m[3], centerX, centerY]
+
+        const realBound = this.getRealBound();
+        const { left: realLeft, top: realTop, width: realWidth, height: realHeight } = realBound;
+        const centerX = realLeft + realWidth / 2;
+        const centerY = realTop + realHeight / 2;
+        const m = this.transform.getMatrix();
+        const renderTransform = new Transform([m[0], m[1], m[2], m[3], centerX, centerY]);
+
+        // Account for parent group transforms if applicable
+        // This handles multi-level nesting and parent flipX/flipY transformations
+        const parent = this.getParent();
+        const effectiveTransform = this.isInGroup && parent?.classType === RENDER_CLASS_TYPE.GROUP
+            ? parent.ancestorTransform.multiply(renderTransform)
+            : renderTransform;
+
+        const oCoord = effectiveTransform.invert().applyPoint(coord);
+        const halfWidth = realWidth / 2;
+        const halfHeight = realHeight / 2;
+        if (
+            oCoord.x >= -halfWidth - this.strokeWidth / 2 &&
+            oCoord.x <= halfWidth + this.strokeWidth / 2 &&
+            oCoord.y >= -halfHeight - this.strokeWidth / 2 &&
+            oCoord.y <= halfHeight + this.strokeWidth / 2
+        ) {
+            return true;
+        }
+
+        return false;
     }
 }

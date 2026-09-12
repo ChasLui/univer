@@ -14,12 +14,11 @@
  * limitations under the License.
  */
 
-import { createIdentifier, Disposable, toDisposable } from '@univerjs/core';
 import type { IDisposable } from '@univerjs/core';
 import type { Observable } from 'rxjs';
+import type { IScrollState } from './type';
+import { createIdentifier, Disposable, toDisposable } from '@univerjs/core';
 import { Subject } from 'rxjs';
-
-import type { IScrollState } from '../../views/sheet-bar/sheet-bar-tabs/utils/slide-tab-bar';
 
 export interface ISheetBarMenuHandler {
     handleSheetBarMenu(): void;

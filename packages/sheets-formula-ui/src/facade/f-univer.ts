@@ -19,7 +19,7 @@ import type { IShowRangeSelectorDialogOptions } from '@univerjs/sheets-formula-u
 import { FUniver } from '@univerjs/core/facade';
 import { GlobalRangeSelectorService } from '@univerjs/sheets-formula-ui';
 
-export interface ISheetsFormulaUIMixin {
+export interface IFUniverSheetsFormulaUIMixin {
     /**
      * Shows the range selector dialog.
      *
@@ -28,7 +28,8 @@ export interface ISheetsFormulaUIMixin {
      * @example
      * ```typescript
      * const fWorkbook = univerAPI.getActiveWorkbook();
-     * const fWorksheet = fWorkbook.getActiveSheet();
+     * const fWorksheet = fWorkbook.getSheetByName('Sheet1');
+     * if (!fWorksheet) return;
      * const unitId = fWorkbook.getId();
      *
      * await univerAPI.showRangeSelectorDialog({
@@ -51,16 +52,16 @@ export interface ISheetsFormulaUIMixin {
     showRangeSelectorDialog(opts: IShowRangeSelectorDialogOptions): Promise<IUnitRangeName[]>;
 }
 
-export class FSheetsFormulaUIUniver extends FUniver implements ISheetsFormulaUIMixin {
+export class FUniverSheetsFormulaUIMixin extends FUniver implements IFUniverSheetsFormulaUIMixin {
     override showRangeSelectorDialog(opts: IShowRangeSelectorDialogOptions): Promise<IUnitRangeName[]> {
         const globalRangeSelectorService = this._injector.get(GlobalRangeSelectorService);
         return globalRangeSelectorService.showRangeSelectorDialog(opts);
     }
 }
 
-FUniver.extend(FSheetsFormulaUIUniver);
+FUniver.extend(FUniverSheetsFormulaUIMixin);
 
 declare module '@univerjs/core/facade' {
     // eslint-disable-next-line ts/naming-convention
-    interface FUniver extends ISheetsFormulaUIMixin { }
+    interface FUniver extends IFUniverSheetsFormulaUIMixin { }
 }

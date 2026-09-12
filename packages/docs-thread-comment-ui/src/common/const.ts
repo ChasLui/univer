@@ -14,8 +14,8 @@
  * limitations under the License.
  */
 
-export const PLUGIN_NAME = 'DOC_THREAD_COMMENT_UI_PLUGIN';
+export const DOCS_THREAD_COMMENT_PANEL = 'univer.doc.thread-comment-panel';
 
-export const DEFAULT_DOC_SUBUNIT_ID = 'default_doc';
+export const PLUGIN_NAME = 'DOC_THREAD_COMMENT_UI_PLUGIN';
 
 export const DEFAULT_TEMP_COMMENT_ID = 'default_comment';

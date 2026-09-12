@@ -137,16 +137,26 @@ export function generateNullCellStyle(ranges: IRange[]): IObjectMatrixPrimitiveT
 }
 
 export function getActiveWorksheet(instanceService: UniverInstanceService): [Nullable<Workbook>, Nullable<Worksheet>] {
-    const workbook = instanceService.getCurrentUnitForType<Workbook>(UniverInstanceType.UNIVER_SHEET);
+    const workbook = instanceService.getCurrentUnitOfType<Workbook>(UniverInstanceType.UNIVER_SHEET);
     const worksheet = workbook?.getActiveSheet();
     return [workbook, worksheet];
+}
+
+export function discreteRangeToRange(discreteRange: IDiscreteRange): IRange {
+    const { rows, cols } = discreteRange;
+    return {
+        startRow: rows[0],
+        endRow: rows[rows.length - 1],
+        startColumn: cols[0],
+        endColumn: cols[cols.length - 1],
+    };
 }
 
 export function rangeToDiscreteRange(range: IRange, accessor: IAccessor, unitId?: string, subUnitId?: string): IDiscreteRange | null {
     const univerInstanceService = accessor.get(IUniverInstanceService);
     const workbook = unitId
         ? univerInstanceService.getUnit<Workbook>(unitId, UniverInstanceType.UNIVER_SHEET)
-        : univerInstanceService.getCurrentUnitForType<Workbook>(UniverInstanceType.UNIVER_SHEET);
+        : univerInstanceService.getCurrentUnitOfType<Workbook>(UniverInstanceType.UNIVER_SHEET);
     const worksheet = subUnitId ? workbook?.getSheetBySheetId(subUnitId) : workbook?.getActiveSheet();
     if (!worksheet) {
         return null;
@@ -229,4 +239,21 @@ export function getVisibleRanges(ranges: IRange[], accessor: IAccessor, unitId?:
     }
 
     return visibleRanges;
+}
+
+export function serializeListOptions(options: string[]) {
+    return JSON.stringify(options.filter(Boolean));
+}
+
+export function deserializeListOptions(optionsStr: string) {
+    try {
+        const options = JSON.parse(optionsStr);
+        if (Array.isArray(options) && options.every((option) => typeof option === 'string')) {
+            return options.filter(Boolean);
+        }
+    } catch {
+        // Fallback for data saved by older versions.
+    }
+
+    return optionsStr.split(',').filter(Boolean);
 }

@@ -27,6 +27,17 @@ import type {
 } from '../enum/text-style';
 import type { ThemeColorType } from '../enum/theme-color-type';
 
+type ExactKeys<T extends object, K extends readonly (keyof T)[]> =
+    Exclude<keyof T, K[number]> extends never
+        ? Exclude<K[number], keyof T> extends never
+            ? K
+            : never
+        : never;
+
+function defineExactKeys<T extends object>() {
+    return <const K extends readonly (keyof T)[]>(keys: ExactKeys<T, K>) => keys;
+}
+
 /**
  * Properties of text decoration
  */
@@ -50,13 +61,39 @@ export interface ITextDecoration {
 }
 
 /**
+ * Exact keys of {@link ITextDecoration}.
+ */
+export const TEXT_DECORATION_KEYS = defineExactKeys<ITextDecoration>()(['s', 'c', 'cl', 't'] as const);
+
+/**
+ * Key union of {@link ITextDecoration}.
+ */
+export type TextDecorationKey = (typeof TEXT_DECORATION_KEYS)[number];
+
+/**
  * RGB color or theme color
  */
 export interface IColorStyle {
-    // rgb?: Nullable<IColor | string>;
+    /**
+     * RGB color string, such as `#RRGGBB` or `rgb(r, g, b)`.
+     */
     rgb?: Nullable<string>;
+
+    /**
+     * Theme color token.
+     */
     th?: ThemeColorType;
 }
+
+/**
+ * Exact keys of {@link IColorStyle}.
+ */
+export const COLOR_STYLE_KEYS = defineExactKeys<IColorStyle>()(['rgb', 'th'] as const);
+
+/**
+ * Key union of {@link IColorStyle}.
+ */
+export type ColorStyleKey = (typeof COLOR_STYLE_KEYS)[number];
 
 /**
  * Format of RBGA color
@@ -69,12 +106,68 @@ export interface IColor {
 }
 
 /**
+ * Glow applied around drawing content.
+ *
+ * Dimensional values use the owning unit's drawing coordinate system.
+ */
+export interface IGlowEffect {
+    /** Glow color as a CSS color string. */
+    color: string;
+    /** Glow radius. */
+    radius?: number;
+}
+
+export type OuterShadowAlignment = 'tl' | 't' | 'tr' | 'l' | 'ctr' | 'r' | 'bl' | 'b' | 'br';
+
+/**
+ * Outer shadow applied to drawing content.
+ *
+ * Dimensional values use the owning unit's drawing coordinate system.
+ */
+export interface IShadowEffect {
+    /** Shadow color as a CSS color string. */
+    color: string;
+    /** OOXML preset shadow token, when the effect originated from `prstShdw`. */
+    preset?: string;
+    /** Shadow opacity, from 0 (transparent) to 1 (opaque). */
+    opacity?: number;
+    /** Blur radius. */
+    blurRadius?: number;
+    /** Direction in degrees, with 0 pointing right and 90 pointing down. */
+    direction?: number;
+    /** Offset distance from the source. */
+    distance?: number;
+    /** Horizontal scale factor; 1 means 100%. */
+    sx?: number;
+    /** Vertical scale factor; 1 means 100%. */
+    sy?: number;
+    /** Horizontal skew angle in degrees. */
+    skewX?: number;
+    /** Vertical skew angle in degrees. */
+    skewY?: number;
+    /** Alignment point used while scaling or skewing the shadow. */
+    alignment?: OuterShadowAlignment;
+    /** Whether the shadow rotates together with its source. */
+    rotateWithShape?: boolean;
+}
+
+/**
  * Style properties of border
  */
 export interface IBorderStyleData {
     s: BorderStyleTypes;
     cl: IColorStyle;
 }
+
+/**
+ * Exact keys of {@link IBorderStyleData}.
+ */
+export const BORDER_STYLE_KEYS = defineExactKeys<IBorderStyleData>()(['s', 'cl'] as const);
+
+/**
+ * Key union of {@link IBorderStyleData}.
+ */
+export type BorderStyleKey = (typeof BORDER_STYLE_KEYS)[number];
 
 /**
  * Style properties of top, bottom, left and right border
@@ -105,6 +198,16 @@ export interface IBorderData {
     bc_tr?: Nullable<IBorderStyleData>;
 }
 
+/**
+ * Exact keys of {@link IBorderData}.
+ */
+export const BORDER_KEYS = defineExactKeys<IBorderData>()(['t', 'r', 'b', 'l', 'tl_br', 'tl_bc', 'tl_mr', 'bl_tr', 'ml_tr', 'bc_tr'] as const);
+
+/**
+ * Key union of {@link IBorderData}.
+ */
+export type BorderKey = (typeof BORDER_KEYS)[number];
+
 export interface ITextRotation {
     /**
      * angle
@@ -119,6 +222,16 @@ export interface ITextRotation {
 }
 
 /**
+ * Exact keys of {@link ITextRotation}.
+ */
+export const TEXT_ROTATION_KEYS = defineExactKeys<ITextRotation>()(['a', 'v'] as const);
+
+/**
+ * Key union of {@link ITextRotation}.
+ */
+export type TextRotationKey = (typeof TEXT_ROTATION_KEYS)[number];
+
+/**
  * Top,right,bottom,left padding
  */
 export interface IPaddingData {
@@ -129,6 +242,16 @@ export interface IPaddingData {
 }
 
 /**
+ * Exact keys of {@link IPaddingData}.
+ */
+export const PADDING_KEYS = defineExactKeys<IPaddingData>()(['t', 'r', 'b', 'l'] as const);
+
+/**
+ * Key union of {@link IPaddingData}.
+ */
+export type PaddingKey = (typeof PADDING_KEYS)[number];
+
+/**
  * Basics properties of cell style
  */
 export interface IStyleBase {
@@ -136,11 +259,9 @@ export interface IStyleBase {
      * fontFamily
      */
     ff?: Nullable<string>;
-    /**
-     * fontSize
-     *
-     * pt
-     */
+    /** Font family used for East Asian characters in rich text. */
+    eastAsiaFontFamily?: Nullable<string>;
+    /** Font size in points (pt), where 1 pt is 1/72 inch. */
     fs?: number;
     /**
      * italic
@@ -203,6 +324,8 @@ export interface IStyleBase {
  * Properties of cell style
  */
 export interface IStyleData extends IStyleBase {
+    /** Whether the font size should shrink to fit the cell width. */
+    stf?: BooleanNumber;
     /**
      * textRotation
      */
@@ -229,3 +352,35 @@ export interface IStyleData extends IStyleBase {
      */
     pd?: Nullable<IPaddingData>;
 }
+
+/**
+ * Exact keys of {@link IStyleData}.
+ */
+export const STYLE_KEYS = defineExactKeys<IStyleData>()([
+    'ff',
+    'eastAsiaFontFamily',
+    'fs',
+    'it',
+    'bl',
+    'ul',
+    'bbl',
+    'st',
+    'ol',
+    'bg',
+    'bd',
+    'cl',
+    'va',
+    'n',
+    'stf',
+    'tr',
+    'td',
+    'ht',
+    'vt',
+    'tb',
+    'pd',
+] as const);
+
+/**
+ * Key union of {@link IStyleData}.
+ */
+export type StyleKey = (typeof STYLE_KEYS)[number];

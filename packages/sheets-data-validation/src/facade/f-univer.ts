@@ -23,7 +23,16 @@ import type {
     IUpdateSheetDataValidationRangeCommandParams,
     IUpdateSheetDataValidationSettingCommandParams,
 } from '@univerjs/sheets-data-validation';
-import type { IBeforeSheetDataValidationAddEvent, IBeforeSheetDataValidationCriteriaUpdateEvent, IBeforeSheetDataValidationDeleteAllEvent, IBeforeSheetDataValidationDeleteEvent, IBeforeSheetDataValidationOptionsUpdateEvent, IBeforeSheetDataValidationRangeUpdateEvent } from './f-event';
+import type {
+    IBeforeSheetDataValidationAddEventParams,
+    IBeforeSheetDataValidationCriteriaUpdateEventParams,
+    IBeforeSheetDataValidationDeleteAllEventParams,
+    IBeforeSheetDataValidationDeleteEventParams,
+    IBeforeSheetDataValidationOptionsUpdateEventParams,
+    IBeforeSheetDataValidationRangeUpdateEventParams,
+    ISheetDataValidationChangedEventParams,
+    ISheetDataValidatorStatusChangedEventParams,
+} from './f-event';
 import { CanceledError, ICommandService } from '@univerjs/core';
 import { FUniver } from '@univerjs/core/facade';
 import {
@@ -41,14 +50,15 @@ import { FDataValidationBuilder } from './f-data-validation-builder';
 /**
  * @ignore
  */
-export interface IFUnvierDataValidationMixin {
+export interface IFUniverSheetsDataValidationMixin {
     /**
      * Creates a new instance of FDataValidationBuilder
      * @returns {FDataValidationBuilder} A new instance of the FDataValidationBuilder class
      * @example
      * ```ts
      * const fWorkbook = univerAPI.getActiveWorkbook();
-     * const fWorksheet = fWorkbook.getActiveSheet();
+     * const fWorksheet = fWorkbook.getSheetByName('Sheet1');
+     * if (!fWorksheet) return;
      *
      * // Create a new data validation rule that requires a number between 1 and 10 fot the range A1:B10
      * const fRange = fWorksheet.getRange('A1:B10');
@@ -66,15 +76,7 @@ export interface IFUnvierDataValidationMixin {
     newDataValidation(): FDataValidationBuilder;
 }
 
-export class FUnvierDataValidationMixin extends FUniver implements IFUnvierDataValidationMixin {
-    /**
-     * @deprecated use `univerAPI.newDataValidation()` as instead.
-     * @returns {FDataValidationBuilder} A new instance of the FDataValidationBuilder class
-     */
-    static override newDataValidation(): FDataValidationBuilder {
-        return new FDataValidationBuilder();
-    }
-
+export class FUniverSheetsDataValidationMixin extends FUniver implements IFUniverSheetsDataValidationMixin {
     override newDataValidation(): FDataValidationBuilder {
         return new FDataValidationBuilder();
     }
@@ -95,21 +97,21 @@ export class FUnvierDataValidationMixin extends FUniver implements IFUnvierDataV
 
                     return sheetDataValidationModel.ruleChange$.subscribe((ruleChange) => {
                         const { unitId, subUnitId, rule, oldRule, type } = ruleChange;
-                        const target = this.getSheetTarget(unitId, subUnitId);
-                        if (!target) {
-                            return;
-                        }
-                        const { workbook, worksheet } = target;
+                        const target = this.getSheetCommandTarget({ unitId, subUnitId });
+                        if (!target) return;
 
+                        const { workbook, worksheet } = target;
                         const fRule = new FDataValidation(rule, worksheet.getSheet(), this._injector);
-                        this.fireEvent(this.Event.SheetDataValidationChanged, {
+
+                        const eventParams: ISheetDataValidationChangedEventParams = {
                             origin: ruleChange,
                             worksheet,
                             workbook,
                             changeType: type,
                             oldRule,
                             rule: fRule,
-                        });
+                        };
+                        this.fireEvent(this.Event.SheetDataValidationChanged, eventParams);
                     });
                 }
             )
@@ -124,23 +126,22 @@ export class FUnvierDataValidationMixin extends FUniver implements IFUnvierDataV
 
                     return sheetDataValidationModel.validStatusChange$.subscribe((statusChange) => {
                         const { unitId, subUnitId, ruleId, status, row, col } = statusChange;
-                        const target = this.getSheetTarget(unitId, subUnitId);
-                        if (!target) {
-                            return;
-                        }
+                        const target = this.getSheetCommandTarget({ unitId, subUnitId });
+                        if (!target) return;
+
                         const { workbook, worksheet } = target;
                         const rule = worksheet.getDataValidation(ruleId);
-                        if (!rule) {
-                            return;
-                        }
-                        this.fireEvent(this.Event.SheetDataValidatorStatusChanged, {
+                        if (!rule) return;
+
+                        const eventParams: ISheetDataValidatorStatusChangedEventParams = {
                             workbook,
                             worksheet,
                             row,
                             column: col,
                             rule,
                             status,
-                        });
+                        };
+                        this.fireEvent(this.Event.SheetDataValidatorStatusChanged, eventParams);
                     });
                 }
             )
@@ -153,17 +154,19 @@ export class FUnvierDataValidationMixin extends FUniver implements IFUnvierDataV
                 () => commandService.beforeCommandExecuted((commandInfo) => {
                     if (commandInfo.id === AddSheetDataValidationCommand.id) {
                         const params = commandInfo.params as IAddSheetDataValidationCommandParams;
-                        const target = this.getSheetTarget(params.unitId, params.subUnitId);
-                        if (!target) {
-                            return;
-                        }
+                        const target = this.getSheetCommandTarget(params);
+                        if (!target) return;
+
                         const { workbook, worksheet } = target;
-                        const eventParams: IBeforeSheetDataValidationAddEvent = {
+                        const { rule } = params;
+
+                        const eventParams: IBeforeSheetDataValidationAddEventParams = {
                             worksheet,
                             workbook,
-                            rule: params.rule,
+                            rule,
                         };
                         this.fireEvent(this.Event.BeforeSheetDataValidationAdd, eventParams);
+
                         if (eventParams.cancel) {
                             throw new CanceledError();
                         }
@@ -178,24 +181,23 @@ export class FUnvierDataValidationMixin extends FUniver implements IFUnvierDataV
                 () => commandService.beforeCommandExecuted((commandInfo) => {
                     if (commandInfo.id === UpdateSheetDataValidationSettingCommand.id) {
                         const params = commandInfo.params as IUpdateSheetDataValidationSettingCommandParams;
-                        const target = this.getSheetTarget(params.unitId, params.subUnitId);
-                        if (!target) {
-                            return;
-                        }
+                        const target = this.getSheetCommandTarget(params);
+                        if (!target) return;
+
                         const { workbook, worksheet } = target;
-                        const rule = worksheet.getDataValidation(params.ruleId);
-                        if (!rule) {
-                            return;
-                        }
-                        const eventParams: IBeforeSheetDataValidationCriteriaUpdateEvent = {
+                        const { ruleId, setting: newCriteria } = params;
+                        const rule = worksheet.getDataValidation(ruleId);
+                        if (!rule) return;
+
+                        const eventParams: IBeforeSheetDataValidationCriteriaUpdateEventParams = {
                             worksheet,
                             workbook,
                             rule,
-                            ruleId: params.ruleId,
-                            newCriteria: params.setting,
+                            ruleId,
+                            newCriteria,
                         };
-
                         this.fireEvent(this.Event.BeforeSheetDataValidationCriteriaUpdate, eventParams);
+
                         if (eventParams.cancel) {
                             throw new CanceledError();
                         }
@@ -210,23 +212,23 @@ export class FUnvierDataValidationMixin extends FUniver implements IFUnvierDataV
                 () => commandService.beforeCommandExecuted((commandInfo) => {
                     if (commandInfo.id === UpdateSheetDataValidationRangeCommand.id) {
                         const params = commandInfo.params as IUpdateSheetDataValidationRangeCommandParams;
-                        const target = this.getSheetTarget(params.unitId, params.subUnitId);
-                        if (!target) {
-                            return;
-                        }
+                        const target = this.getSheetCommandTarget(params);
+                        if (!target) return;
+
                         const { workbook, worksheet } = target;
-                        const rule = worksheet.getDataValidation(params.ruleId);
-                        if (!rule) {
-                            return;
-                        }
-                        const eventParams: IBeforeSheetDataValidationRangeUpdateEvent = {
+                        const { ruleId, ranges: newRanges } = params;
+                        const rule = worksheet.getDataValidation(ruleId);
+                        if (!rule) return;
+
+                        const eventParams: IBeforeSheetDataValidationRangeUpdateEventParams = {
                             worksheet,
                             workbook,
                             rule,
-                            ruleId: params.ruleId,
-                            newRanges: params.ranges,
+                            ruleId,
+                            newRanges,
                         };
                         this.fireEvent(this.Event.BeforeSheetDataValidationRangeUpdate, eventParams);
+
                         if (eventParams.cancel) {
                             throw new CanceledError();
                         }
@@ -241,23 +243,23 @@ export class FUnvierDataValidationMixin extends FUniver implements IFUnvierDataV
                 () => commandService.beforeCommandExecuted((commandInfo) => {
                     if (commandInfo.id === UpdateSheetDataValidationOptionsCommand.id) {
                         const params = commandInfo.params as IUpdateSheetDataValidationOptionsCommandParams;
-                        const target = this.getSheetTarget(params.unitId, params.subUnitId);
-                        if (!target) {
-                            return;
-                        }
+                        const target = this.getSheetCommandTarget(params);
+                        if (!target) return;
+
                         const { workbook, worksheet } = target;
-                        const rule = worksheet.getDataValidation(params.ruleId);
-                        if (!rule) {
-                            return;
-                        }
-                        const eventParams: IBeforeSheetDataValidationOptionsUpdateEvent = {
+                        const { ruleId, options: newOptions } = params;
+                        const rule = worksheet.getDataValidation(ruleId);
+                        if (!rule) return;
+
+                        const eventParams: IBeforeSheetDataValidationOptionsUpdateEventParams = {
                             worksheet,
                             workbook,
                             rule,
-                            ruleId: params.ruleId,
-                            newOptions: params.options,
+                            ruleId,
+                            newOptions,
                         };
                         this.fireEvent(this.Event.BeforeSheetDataValidationOptionsUpdate, eventParams);
+
                         if (eventParams.cancel) {
                             throw new CanceledError();
                         }
@@ -272,22 +274,22 @@ export class FUnvierDataValidationMixin extends FUniver implements IFUnvierDataV
                 () => commandService.beforeCommandExecuted((commandInfo) => {
                     if (commandInfo.id === RemoveSheetDataValidationCommand.id) {
                         const params = commandInfo.params as IRemoveSheetDataValidationCommandParams;
-                        const target = this.getSheetTarget(params.unitId, params.subUnitId);
-                        if (!target) {
-                            return;
-                        }
+                        const target = this.getSheetCommandTarget(params);
+                        if (!target) return;
+
                         const { workbook, worksheet } = target;
-                        const rule = worksheet.getDataValidation(params.ruleId);
-                        if (!rule) {
-                            return;
-                        }
-                        const eventParams: IBeforeSheetDataValidationDeleteEvent = {
+                        const { ruleId } = params;
+                        const rule = worksheet.getDataValidation(ruleId);
+                        if (!rule) return;
+
+                        const eventParams: IBeforeSheetDataValidationDeleteEventParams = {
                             worksheet,
                             workbook,
                             rule,
-                            ruleId: params.ruleId,
+                            ruleId,
                         };
                         this.fireEvent(this.Event.BeforeSheetDataValidationDelete, eventParams);
+
                         if (eventParams.cancel) {
                             throw new CanceledError();
                         }
@@ -302,17 +304,19 @@ export class FUnvierDataValidationMixin extends FUniver implements IFUnvierDataV
                 () => commandService.beforeCommandExecuted((commandInfo) => {
                     if (commandInfo.id === RemoveSheetAllDataValidationCommand.id) {
                         const params = commandInfo.params as IRemoveSheetAllDataValidationCommandParams;
-                        const target = this.getSheetTarget(params.unitId, params.subUnitId);
-                        if (!target) {
-                            return;
-                        }
+                        const target = this.getSheetCommandTarget(params);
+                        if (!target) return;
+
                         const { workbook, worksheet } = target;
-                        const eventParams: IBeforeSheetDataValidationDeleteAllEvent = {
+                        const rules = worksheet.getDataValidations();
+
+                        const eventParams: IBeforeSheetDataValidationDeleteAllEventParams = {
                             worksheet,
                             workbook,
-                            rules: worksheet.getDataValidations(),
+                            rules,
                         };
                         this.fireEvent(this.Event.BeforeSheetDataValidationDeleteAll, eventParams);
+
                         if (eventParams.cancel) {
                             throw new CanceledError();
                         }
@@ -323,20 +327,8 @@ export class FUnvierDataValidationMixin extends FUniver implements IFUnvierDataV
     }
 }
 
-FUniver.extend(FUnvierDataValidationMixin);
+FUniver.extend(FUniverSheetsDataValidationMixin);
 declare module '@univerjs/core/facade' {
-    /**
-     * @ignore
-     */
-    // eslint-disable-next-line ts/no-namespace
-    namespace FUniver {
-        /**
-         * @deprecated use `univerAPI.newDataValidation()` as instead.
-         * @returns {FDataValidationBuilder} A new instance of the FDataValidationBuilder class
-         */
-        function newDataValidation(): FDataValidationBuilder;
-    }
-
     // eslint-disable-next-line ts/naming-convention
-    interface FUniver extends IFUnvierDataValidationMixin {}
+    interface FUniver extends IFUniverSheetsDataValidationMixin {}
 }

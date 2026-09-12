@@ -14,7 +14,14 @@
  * limitations under the License.
  */
 
-import type { DrawingTypeEnum, ICommandInfo, IDrawingParam, IDrawingSearch, ITransformState, Nullable } from '@univerjs/core';
+import type {
+    DrawingTypeEnum,
+    ICommandInfo,
+    IDrawingParam,
+    IDrawingSearch,
+    ITransformState,
+    Nullable,
+} from '@univerjs/core';
 import type { IDrawingGroupUpdateParam, IDrawingOrderMapParam } from '@univerjs/drawing';
 import type { BaseObject, Image, IShapeProps, Scene, Shape } from '@univerjs/engine-render';
 import type { ISetDrawingAlignOperationParams } from '../commands/operations/drawing-align.operation';
@@ -25,12 +32,23 @@ import {
     IUniverInstanceService,
     toDisposable,
 } from '@univerjs/core';
-import { getDrawingShapeKeyByDrawingSearch, IDrawingManagerService, SetDrawingSelectedOperation } from '@univerjs/drawing';
-import { DRAWING_OBJECT_LAYER_INDEX, Group, IRenderManagerService, RENDER_CLASS_TYPE } from '@univerjs/engine-render';
+import {
+    getDrawingShapeKeyByDrawingSearch,
+    IDrawingManagerService,
+    SetDrawingSelectedOperation,
+} from '@univerjs/drawing';
+import {
+    DRAWING_OBJECT_LAYER_INDEX,
+    DrawingGroupObject,
+    Group,
+    IRenderManagerService,
+    RENDER_CLASS_TYPE,
+} from '@univerjs/engine-render';
 import { AlignType, SetDrawingAlignOperation } from '../commands/operations/drawing-align.operation';
 import { CloseImageCropOperation } from '../commands/operations/image-crop.operation';
+import { ensureDrawingRenderLayer } from '../services/drawing-render.service';
 import { getUpdateParams } from '../utils/get-update-params';
-import { getCurrentUnitInfo } from './utils';
+import { disposeDrawingRenderObject, getCurrentUnitInfo, insertGroupObject, syncGroupRotateEnabled } from './utils';
 
 interface IDrawingTransformCache {
     unitId: string;
@@ -38,6 +56,71 @@ interface IDrawingTransformCache {
     drawingId: string;
     drawingType: DrawingTypeEnum;
     transform: ITransformState;
+}
+
+interface IDrawingTransformStateWithClipBounds extends ITransformState {
+    clipBounds?: Nullable<{ left: number; top: number; width: number; height: number }>;
+}
+
+interface IDrawingRefreshMetadata {
+    hidden?: boolean;
+    behindText?: boolean;
+    selectable?: boolean;
+}
+
+type IDrawingParamWithRefreshMetadata = IDrawingParam & IDrawingRefreshMetadata;
+
+function hasRefreshMetadata(refreshParam: IDrawingSearch): refreshParam is IDrawingSearch & IDrawingRefreshMetadata {
+    return 'hidden' in refreshParam || 'behindText' in refreshParam || 'selectable' in refreshParam;
+}
+
+function syncDrawingHiddenState(shape: BaseObject, drawingParam: IDrawingParamWithRefreshMetadata): void {
+    if (!('hidden' in drawingParam)) {
+        return;
+    }
+
+    drawingParam.hidden === true ? shape.hide() : shape.show();
+}
+
+function syncDrawingSelectableState(
+    shape: BaseObject,
+    drawingParam: IDrawingParamWithRefreshMetadata,
+    scene: Scene,
+    drawingManagerService: IDrawingManagerService
+): void {
+    const previousDrawing = drawingManagerService.getOldDrawingByParam(drawingParam);
+    // Some drawing types are eventless by design. Only override that behavior when selectable is explicitly
+    // managed; deleting a previously present field means restoring Shape's default selectable state.
+    if (!('selectable' in drawingParam) && (!previousDrawing || !('selectable' in previousDrawing))) {
+        return;
+    }
+
+    const selectable = drawingParam.selectable !== false;
+    shape.evented = selectable;
+    if (selectable) {
+        return;
+    }
+
+    // Disabling picking must also discard stale selection state, otherwise the transformer remains interactive.
+    scene.getTransformer()?.clearControlByIds([shape.oKey]);
+    const focusedDrawings = drawingManagerService.getFocusDrawings();
+    const remainingDrawings = focusedDrawings.filter(({ unitId, subUnitId, drawingId }) =>
+        unitId !== drawingParam.unitId || subUnitId !== drawingParam.subUnitId || drawingId !== drawingParam.drawingId
+    );
+    if (remainingDrawings.length !== focusedDrawings.length) {
+        drawingManagerService.focusDrawing(remainingDrawings);
+    }
+}
+
+function mergeRefreshMetadata(drawingParam: IDrawingParam, refreshParam: IDrawingSearch): IDrawingParamWithRefreshMetadata {
+    if (!hasRefreshMetadata(refreshParam)) {
+        return drawingParam;
+    }
+
+    return {
+        ...drawingParam,
+        ...refreshParam,
+    };
 }
 
 export class DrawingUpdateController extends Disposable {
@@ -158,7 +241,7 @@ export class DrawingUpdateController extends Disposable {
             return;
         }
 
-        const renderObject = this._renderManagerService.getRenderById(unitId);
+        const renderObject = this._renderManagerService.getRenderUnitById(unitId);
 
         const scene = renderObject?.scene;
 
@@ -229,13 +312,27 @@ export class DrawingUpdateController extends Disposable {
         }
 
         const groupKey = getDrawingShapeKeyByDrawingSearch({ unitId, subUnitId, drawingId });
-        const group = new Group(groupKey);
+        const group = new DrawingGroupObject(groupKey);
 
         scene.addObject(group, DRAWING_OBJECT_LAYER_INDEX).attachTransformerTo(group);
 
         group.addObjects(...objects);
+        syncGroupRotateEnabled(group, parent, scene, this._drawingManagerService, children);
+        if (parent.groupBaseBound) {
+            group.setBaseBound(parent.groupBaseBound);
+        }
+
+        if (parent.groupId) {
+            group.isInGroup = true;
+            insertGroupObject(
+                { drawingId: parent.groupId, unitId, subUnitId },
+                group,
+                scene,
+                this._drawingManagerService
+            );
+        }
         // group.reCalculateObjects();
-        parent.transform && group.transformByState({ left: parent.transform.left, top: parent.transform.top });
+        parent.transform && group.transformByState({ left: parent.transform.left, top: parent.transform.top, width: parent.transform.width, height: parent.transform.height, angle: parent.transform.angle });
 
         transformer.clearSelectedObjects();
         transformer.setSelectedControl(group);
@@ -370,7 +467,7 @@ export class DrawingUpdateController extends Disposable {
 
     private _drawingAlign(params: ISetDrawingAlignOperationParams) {
         const { alignType } = params;
-        const drawings = this._drawingManagerService.getFocusDrawings();
+        const drawings = params.drawings || this._drawingManagerService.getFocusDrawings();
 
         if (alignType === AlignType.default) {
             return;
@@ -611,15 +708,7 @@ export class DrawingUpdateController extends Disposable {
                     }
                     const { scene } = renderObject;
 
-                    const drawingShapeKey = getDrawingShapeKeyByDrawingSearch({ unitId, subUnitId, drawingId });
-
-                    const drawingShapes = scene.fuzzyMathObjects(drawingShapeKey, true);
-
-                    if (drawingShapes.length > 0) {
-                        for (const drawingShape of drawingShapes) {
-                            drawingShape.dispose();
-                        }
-
+                    if (disposeDrawingRenderObject(scene, { unitId, subUnitId, drawingId })) {
                         scene.getTransformer()?.clearSelectedObjects();
                     }
                 });
@@ -656,13 +745,19 @@ export class DrawingUpdateController extends Disposable {
 
                     const drawingShapeKey = getDrawingShapeKeyByDrawingSearch({ unitId, subUnitId, drawingId });
 
-                    const drawingShape = scene.getObject(drawingShapeKey) as Image;
+                    // getObject() excludes hidden and grouped children, but both still need model updates and may
+                    // become visible again as part of this notification.
+                    const drawingShape = scene.getObjectIncludeInGroup(drawingShapeKey) as Image;
 
                     if (drawingShape == null) {
                         return true;
                     }
 
                     drawingShape.transformByState({ left, top, width, height, angle, flipX, flipY, skewX, skewY });
+                    (drawingShape as Image).setClipBounds?.((transform as IDrawingTransformStateWithClipBounds).clipBounds);
+                    syncDrawingHiddenState(drawingShape, drawingParam);
+                    syncDrawingSelectableState(drawingShape, drawingParam, scene, this._drawingManagerService);
+                    ensureDrawingRenderLayer(scene, drawingShape, drawingParam);
 
                     scene.getTransformer()?.debounceRefreshControls();
                 });
@@ -687,10 +782,19 @@ export class DrawingUpdateController extends Disposable {
                     const { transform } = drawingParam;
                     const { scene } = renderObject;
 
-                    const drawingShapeKey = getDrawingShapeKeyByDrawingSearch({ unitId, subUnitId, drawingId });
-                    const drawingShape = scene.getObject(drawingShapeKey);
+                    if (transform == null) {
+                        return true;
+                    }
 
-                    if (drawingShape == null || transform == null) {
+                    const drawingShapeKey = getDrawingShapeKeyByDrawingSearch({ unitId, subUnitId, drawingId });
+                    const drawingShape = scene.getObjectIncludeInGroup(drawingShapeKey);
+                    const drawingParamWithRefreshMetadata = mergeRefreshMetadata(drawingParam, param);
+
+                    if (drawingShape == null) {
+                        if (drawingParamWithRefreshMetadata.hidden === true) {
+                            return true;
+                        }
+                        this._drawingManagerService.addNotification([{ unitId, subUnitId, drawingId }]);
                         return true;
                     }
 
@@ -707,6 +811,10 @@ export class DrawingUpdateController extends Disposable {
                     } = transform;
 
                     drawingShape.transformByState({ left, top, width, height, angle, flipX, flipY, skewX, skewY });
+                    (drawingShape as Image).setClipBounds?.((transform as IDrawingTransformStateWithClipBounds).clipBounds);
+                    syncDrawingHiddenState(drawingShape as BaseObject, drawingParamWithRefreshMetadata);
+                    syncDrawingSelectableState(drawingShape as BaseObject, drawingParamWithRefreshMetadata, scene, this._drawingManagerService);
+                    ensureDrawingRenderLayer(scene, drawingShape as BaseObject, drawingParamWithRefreshMetadata);
                 });
             })
         );
@@ -725,7 +833,8 @@ export class DrawingUpdateController extends Disposable {
                     const { scene } = renderObject;
 
                     const drawingShapeKey = getDrawingShapeKeyByDrawingSearch({ unitId, subUnitId, drawingId });
-                    const drawingShape = scene.getObject(drawingShapeKey);
+                    // Hidden objects are absent from getObject(), so use the unfiltered lookup to show them again.
+                    const drawingShape = scene.getObjectIncludeInGroup(drawingShapeKey);
 
                     if (drawingShape == null) {
                         return true;

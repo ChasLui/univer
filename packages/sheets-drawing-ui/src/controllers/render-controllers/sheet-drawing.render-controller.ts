@@ -15,19 +15,17 @@
  */
 
 import type { IRenderContext, IRenderModule } from '@univerjs/engine-render';
-import { Disposable, Inject } from '@univerjs/core';
+import { Disposable, DrawingTypeEnum, Inject } from '@univerjs/core';
 import { IDrawingManagerService } from '@univerjs/drawing';
-import { ISheetDrawingService } from '@univerjs/sheets-drawing';
-import { ISheetSelectionRenderService, SheetSkeletonManagerService } from '@univerjs/sheets-ui';
-import { drawingPositionToTransform } from '../../basics/transform-position';
+import { SheetSkeletonService } from '@univerjs/sheets';
+import { drawingPositionToTransform, ISheetDrawingService, SheetDrawingAnchorType } from '@univerjs/sheets-drawing';
 
 export class SheetsDrawingRenderController extends Disposable implements IRenderModule {
     constructor(
         private _context: IRenderContext,
         @ISheetDrawingService private readonly _sheetDrawingService: ISheetDrawingService,
         @IDrawingManagerService private readonly _drawingManagerService: IDrawingManagerService,
-        @Inject(ISheetSelectionRenderService) private _sheetSelectionRenderService: ISheetSelectionRenderService,
-        @Inject(SheetSkeletonManagerService) private _sheetSkeletonManagerService: SheetSkeletonManagerService
+        @Inject(SheetSkeletonService) private readonly _sheetSkeletonService: SheetSkeletonService
     ) {
         super();
 
@@ -46,8 +44,23 @@ export class SheetsDrawingRenderController extends Disposable implements IRender
             const subUnitData = data[subUnit];
             for (const drawingId in subUnitData.data) {
                 const drawingData = subUnitData.data[drawingId];
-                if (drawingData.sheetTransform) {
-                    drawingData.transform = drawingPositionToTransform(drawingData.sheetTransform, this._sheetSelectionRenderService, this._sheetSkeletonManagerService);
+                const { unitId, subUnitId } = drawingData;
+                const skeletonParam = this._sheetSkeletonService.getSkeletonParam(unitId, subUnitId);
+
+                if (
+                    skeletonParam &&
+                    drawingData.sheetTransform &&
+                    !drawingData.groupId &&
+                    drawingData.anchorType !== SheetDrawingAnchorType.None
+                ) {
+                    const transform = drawingPositionToTransform(drawingData.sheetTransform, skeletonParam);
+                    drawingData.transform = transform && drawingData.drawingType === DrawingTypeEnum.DRAWING_GROUP
+                        ? {
+                            ...transform,
+                            left: (transform.left ?? 0) - skeletonParam.skeleton.rowHeaderWidthAndMarginLeft,
+                            top: (transform.top ?? 0) - skeletonParam.skeleton.columnHeaderHeightAndMarginTop,
+                        }
+                        : transform;
                 }
             }
         }

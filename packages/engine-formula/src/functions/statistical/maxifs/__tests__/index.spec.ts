@@ -27,7 +27,8 @@ import { generateExecuteAstNodeData } from '../../../../engine/utils/ast-node-to
 import { IFormulaCurrentConfigService } from '../../../../services/current-data.service';
 import { IFunctionService } from '../../../../services/function.service';
 import { IFormulaRuntimeService } from '../../../../services/runtime.service';
-import { createFunctionTestBed, getObjectValue } from '../../../__tests__/create-function-test-bed';
+import { createFunctionTestBed } from '../../../__tests__/create-function-test-bed';
+import { getObjectValue } from '../../../util';
 import { FUNCTION_NAMES_STATISTICAL } from '../../function-names';
 import { Maxifs } from '../index';
 
@@ -170,9 +171,7 @@ describe('Test maxifs function', () => {
             testBed.unitId
         );
 
-        functionService.registerExecutors(
-            new Maxifs(FUNCTION_NAMES_STATISTICAL.MAXIFS)
-        );
+        functionService.registerExecutors(new Maxifs(FUNCTION_NAMES_STATISTICAL.MAXIFS));
 
         calculate = (formula: string) => {
             const lexerNode = lexer.treeBuilder(formula);
@@ -189,6 +188,11 @@ describe('Test maxifs function', () => {
         it('Value is normal', async () => {
             const result = await calculate('=MAXIFS(A1:A4,B1:B4,">3")');
             expect(result).toBe(4);
+        });
+
+        it('Value is zero when no cells match criteria', async () => {
+            const result = await calculate('=MAXIFS(A1:A4,B1:B4,">9")');
+            expect(result).toBe(0);
         });
 
         it('Value is array', async () => {

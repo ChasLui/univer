@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import type { ICellData, Injector, Nullable, Univer } from '@univerjs/core';
+import type { ICellData, Injector, Nullable, Univer, Workbook } from '@univerjs/core';
 import {
     ICommandService,
     IUniverInstanceService,
@@ -23,9 +23,14 @@ import {
     set,
     ThemeService,
     UndoCommand,
+    UniverInstanceType,
 } from '@univerjs/core';
 import {
     AddWorksheetMergeMutation,
+    AutoFillCommand,
+    AutoFillController,
+    AutoFillService,
+    IAutoFillService,
     RangeProtectionRenderModel,
     RangeProtectionService,
     RemoveWorksheetMergeMutation,
@@ -33,18 +38,15 @@ import {
     SetSelectionsOperation,
     SheetsSelectionsService,
 } from '@univerjs/sheets';
+import { FormulaAutoFillController } from '@univerjs/sheets-formula';
 import {
-    AutoFillCommand,
-    AutoFillController,
-    AutoFillService,
-    IAutoFillService,
+    AutoFillUIController,
     ISheetSelectionRenderService,
     SheetSelectionRenderService,
     SheetsRenderService,
 } from '@univerjs/sheets-ui';
 import { IPlatformService, IShortcutService, PlatformService, ShortcutService } from '@univerjs/ui';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { FormulaAutoFillController } from '../formula-auto-fill.controller';
 import { createCommandTestBed } from './create-command-test-bed';
 
 class mockSheetsRenderService {
@@ -67,14 +69,15 @@ describe('Test auto fill with formula', () => {
     beforeEach(() => {
         const testBed = createCommandTestBed(undefined, [
             [ISheetSelectionRenderService, { useClass: SheetSelectionRenderService }],
-            [AutoFillController],
             [IAutoFillService, { useClass: AutoFillService }],
             [IShortcutService, { useClass: ShortcutService }],
             [IPlatformService, { useClass: PlatformService }],
+            [SheetsRenderService, { useClass: mockSheetsRenderService }],
+            [AutoFillController],
+            [AutoFillUIController],
             [FormulaAutoFillController],
             [RangeProtectionService],
             [RangeProtectionRenderModel],
-            [SheetsRenderService, { useClass: mockSheetsRenderService }],
         ]);
 
         univer = testBed.univer;
@@ -83,10 +86,11 @@ describe('Test auto fill with formula', () => {
         commandService = get(ICommandService);
         themeService = get(ThemeService);
         const theme = themeService.getCurrentTheme();
-        const newTheme = set(theme, 'black', '#35322b');
+        const newTheme = set(theme, 'gray.1000', '#35322b');
         themeService.setTheme(newTheme);
 
         get(AutoFillController);
+        get(AutoFillUIController);
 
         commandService.registerCommand(SetRangeValuesMutation);
         commandService.registerCommand(SetSelectionsOperation);
@@ -103,7 +107,7 @@ describe('Test auto fill with formula', () => {
             endColumn: number
         ): Array<Array<Nullable<ICellData>>> | undefined =>
             get(IUniverInstanceService)
-                .getUniverSheetInstance('test')
+                .getUnit<Workbook>('test', UniverInstanceType.UNIVER_SHEET)
                 ?.getSheetBySheetId('sheet1')
                 ?.getRange(startRow, startColumn, endRow, endColumn)
                 .getValues();

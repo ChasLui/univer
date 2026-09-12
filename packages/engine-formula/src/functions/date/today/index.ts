@@ -14,7 +14,8 @@
  * limitations under the License.
  */
 
-import { DEFAULT_DATE_FORMAT, excelDateSerial } from '../../../basics/date';
+import { excelDateSerial } from '@univerjs/core';
+import { DEFAULT_DATE_FORMAT } from '../../../basics/date';
 import { NumberValueObject } from '../../../engine/value-object/primitive-object';
 import { BaseFunction } from '../../base-function';
 
@@ -24,7 +25,11 @@ export class Today extends BaseFunction {
     override maxParams = 0;
 
     override calculate() {
-        const currentSerial = excelDateSerial(new Date());
+        const now = new Date();
+        // Excel TODAY follows the user's local calendar day. Convert that day to a UTC
+        // midnight carrier before calculating the timezone-independent Excel serial.
+        const utcNow = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
+        const currentSerial = excelDateSerial(utcNow, this.getDateSystem());
         const valueObject = NumberValueObject.create(currentSerial, DEFAULT_DATE_FORMAT);
         return valueObject;
     }

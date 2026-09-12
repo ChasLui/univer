@@ -25,6 +25,7 @@ import { SheetColumnHeaderExtensionRegistry } from '../../extension';
 import { SheetExtension } from './sheet-extension';
 
 const UNIQUE_KEY = 'DefaultColumnHeaderLayoutExtension';
+const MIN_TEXT_RENDER_WIDTH_IN_SCREEN_PX = 4;
 
 export interface IColumnsHeaderCfgParam {
     headerStyle?: Partial<IHeaderStyleCfg>;
@@ -34,11 +35,18 @@ export interface IColumnsHeaderCfgParam {
 const DEFAULT_COLUMN_STYLE = {
     fontSize: 13,
     fontFamily: DEFAULT_FONTFACE_PLANE,
+    fontColor: 'gray.900',
+    backgroundColor: 'gray.50',
+    borderColor: 'gray.200',
+    textAlign: 'center',
+    textBaseline: 'middle',
+} as const;
+
+const DEFAULT_PRINTING_COLUMN_STYLE = {
+    ...DEFAULT_COLUMN_STYLE,
     fontColor: '#000000',
     backgroundColor: getColor([248, 249, 250]),
     borderColor: getColor([217, 217, 217]),
-    textAlign: 'center',
-    textBaseline: 'middle',
 } as const;
 
 /**
@@ -76,9 +84,10 @@ export class ColumnHeaderLayout extends SheetExtension {
         return { ...this.columnsCfg, ...columnsCfg };
     }
 
-    getHeaderStyle(sheetId: string): IHeaderStyleCfg {
+    getHeaderStyle(sheetId: string, isPrinting = false): IHeaderStyleCfg {
         const headerStyle = this.headerStyleOfWorksheet.get(sheetId) ?? {};
-        return { ...DEFAULT_COLUMN_STYLE, ...this.headerStyle, ...headerStyle };
+        const defaultStyle = isPrinting ? DEFAULT_PRINTING_COLUMN_STYLE : DEFAULT_COLUMN_STYLE;
+        return { ...defaultStyle, ...this.headerStyle, ...headerStyle };
     }
 
     getCfgOfCurrentColumn(columnsCfg: Record<number, IAColumnCfg>, headerStyle: IHeaderStyleCfg, colIndex: number): [IAColumnCfgObj, boolean] {
@@ -127,7 +136,7 @@ export class ColumnHeaderLayout extends SheetExtension {
         }
 
         const columnsCfg = this.getColumnsCfg(worksheet.getSheetId());
-        const headerStyle = this.getHeaderStyle(worksheet.getSheetId());
+        const headerStyle = this.getHeaderStyle(worksheet.getSheetId(), ctx.__mode === 'printing');
 
         const scale = this._getScale(parentScale);
         this.setStyleToCtx(ctx, headerStyle);
@@ -141,6 +150,7 @@ export class ColumnHeaderLayout extends SheetExtension {
         ctx.setLineWidthByPrecision(1);
         ctx.translateWithPrecisionRatio(FIX_ONE_PIXEL_BLUR_OFFSET, FIX_ONE_PIXEL_BLUR_OFFSET);
         let preColumnPosition = 0;
+        const colGaps = spreadsheetSkeleton.gapConfig?.colGaps;
 
         // draw each column header
         for (let c = startColumn - 1; c <= endColumn; c++) {
@@ -152,6 +162,49 @@ export class ColumnHeaderLayout extends SheetExtension {
             if (preColumnPosition === columnEndPosition) {
                 continue;// Skip hidden columns
             }
+
+            // Draw gap area in column header if a gap is configured before this column
+            const gapSize = colGaps?.[c]?.size ?? 0;
+            if (gapSize > 0) {
+                const gapItem = colGaps![c];
+                const gapLeft = preColumnPosition;
+                const gapRight = preColumnPosition + gapSize;
+                // defaultBackgroundColor and defaultStripeColor are guaranteed by SheetSkeleton._fillDefaultGapThemeColors
+                const { defaultBackgroundColor = '', defaultStripeColor = '' } = spreadsheetSkeleton.gapConfig || {};
+                const defaultBg = defaultBackgroundColor;
+                const defaultStripe = defaultStripeColor;
+
+                // Fill gap background
+                ctx.save();
+                ctx.fillStyle = gapItem.color ?? defaultBg;
+                ctx.fillRectByPrecision(gapLeft, 0, gapSize, columnHeaderHeight);
+                ctx.restore();
+
+                // Draw diagonal stripes
+                ctx.save();
+                ctx.beginPath();
+                ctx.rectByPrecision(gapLeft, 0, gapSize, columnHeaderHeight);
+                ctx.clip();
+                ctx.strokeStyle = gapItem.stripeColor ?? defaultStripe;
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                const spacing = 6;
+                for (let d = -columnHeaderHeight; d < gapSize; d += spacing) {
+                    ctx.moveTo(gapLeft + d, columnHeaderHeight);
+                    ctx.lineTo(gapLeft + d + columnHeaderHeight, 0);
+                }
+                ctx.stroke();
+                ctx.restore();
+
+                preColumnPosition = gapRight;
+            }
+
+            // After gap, the column itself may still be hidden (width = 0)
+            if (preColumnPosition >= columnEndPosition) {
+                preColumnPosition = columnEndPosition;
+                continue;
+            }
+
             const cellBound = { left: preColumnPosition, top: 0, right: columnEndPosition, bottom: columnHeaderHeight, width: columnEndPosition - preColumnPosition, height: columnHeaderHeight };
             const [curColumnCfg, specStyle] = this.getCfgOfCurrentColumn(columnsCfg, headerStyle, c);
 
@@ -168,6 +221,12 @@ export class ColumnHeaderLayout extends SheetExtension {
             ctx.moveToByPrecision(cellBound.right, 0);
             ctx.lineToByPrecision(cellBound.right, cellBound.height);
             ctx.stroke();
+
+            if (cellBound.width * Math.abs(parentScale.scaleX ?? 1) < MIN_TEXT_RENDER_WIDTH_IN_SCREEN_PX) {
+                preColumnPosition = columnEndPosition;
+                continue;
+            }
+
             // column header text
             const textX = (() => {
                 switch (curColumnCfg.textAlign) {

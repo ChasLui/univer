@@ -23,7 +23,7 @@ import { FWorksheet } from '@univerjs/sheets/facade';
 /**
  * @ignore
  */
-export interface IFWorksheetSort {
+export interface IFWorksheetSortMixin {
     /**
      * Sort the worksheet by the specified column.
      * @param {number} colIndex The column index to sort by.
@@ -32,7 +32,8 @@ export interface IFWorksheetSort {
      * @example
      * ```typescript
      * const fWorkbook = univerAPI.getActiveWorkbook();
-     * const fWorksheet = fWorkbook.getActiveSheet();
+     * const fWorksheet = fWorkbook.getSheetByName('Sheet1');
+     * if (!fWorksheet) return;
      *
      * // Sorts the worksheet by the column A in ascending order.
      * fWorksheet.sort(0);
@@ -44,7 +45,7 @@ export interface IFWorksheetSort {
     sort(colIndex: number, asc?: boolean): FWorksheet;
 }
 
-export class FWorksheetSort extends FWorksheet implements IFWorksheetSort {
+export class FWorksheetSortMixin extends FWorksheet implements IFWorksheetSortMixin {
     override sort(colIndex: number, asc = true): FWorksheet {
         const orderRules: IOrderRule[] = [{
             colIndex,
@@ -69,8 +70,8 @@ export class FWorksheetSort extends FWorksheet implements IFWorksheetSort {
     }
 }
 
-FWorksheet.extend(FWorksheetSort);
+FWorksheet.extend(FWorksheetSortMixin);
 declare module '@univerjs/sheets/facade' {
     // eslint-disable-next-line ts/naming-convention
-    interface FWorksheet extends IFWorksheetSort {}
+    interface FWorksheet extends IFWorksheetSortMixin {}
 }

@@ -16,13 +16,41 @@
 
 import type { IParagraph, IParagraphStyle, ITextRun, Nullable } from '@univerjs/core';
 import type { ICellDataWithSpanInfo } from '../type';
-import { DataStreamTreeTokenType, Tools } from '@univerjs/core';
+import { createParagraphId, DataStreamTreeTokenType, Tools } from '@univerjs/core';
 import { ptToPixel } from '@univerjs/engine-render';
+import { sanitizeParsedHtml } from '@univerjs/ui';
+
+function cleanTextNodes(node: Node) {
+    if (node.nodeType === Node.TEXT_NODE) {
+        /**
+         * Clean excel copied text nodes:
+         * \r => carriage return
+         * \n => new line
+         * \t => tab
+         * multiple spaces => indentation
+         * These will be treated as a single space in excel cell. '\r\n   ' = ' '
+         */
+        node.textContent = (node.textContent || '').replace(/\r?\n[\t ]*/g, ' ');
+        return;
+    }
+
+    node.childNodes.forEach(cleanTextNodes);
+}
 
 export default function parseToDom(rawHtml: string) {
-    const template = document.createElement('body');
-    template.innerHTML = rawHtml;
-    return template;
+    const doc = document.implementation.createHTMLDocument('');
+    const range = doc.createRange();
+    range.selectNodeContents(doc.body);
+
+    const fragment = range.createContextualFragment(rawHtml);
+
+    sanitizeParsedHtml(fragment, {
+        strippedSelector: 'script, iframe, object, embed',
+    });
+    cleanTextNodes(fragment);
+    doc.body.append(fragment);
+
+    return doc.body;
 }
 
 // TODO: @JOCS, Complete other missing attributes that exist in IParagraphStyle
@@ -68,6 +96,7 @@ export function getParagraphStyle(el: HTMLElement): Nullable<IParagraphStyle> {
 
 export function generateParagraphs(dataStream: string, prevParagraph?: IParagraph): IParagraph[] {
     const paragraphs: IParagraph[] = [];
+    const existingParagraphIds = new Set<string>();
 
     for (let i = 0, len = dataStream.length; i < len; i++) {
         const char = dataStream[i];
@@ -78,6 +107,7 @@ export function generateParagraphs(dataStream: string, prevParagraph?: IParagrap
 
         paragraphs.push({
             startIndex: i,
+            paragraphId: createParagraphId(existingParagraphIds),
         });
     }
 

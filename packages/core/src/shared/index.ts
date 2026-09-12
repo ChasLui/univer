@@ -18,13 +18,12 @@ export { afterInitApply } from './after-init-apply';
 export * from './array-search';
 export * from './blob';
 export { checkIfMove, MOVE_BUFFER_VALUE, ROTATE_BUFFER_VALUE } from './check-if-move';
-export * from './clipboard';
-export * from './color/color';
 export { ColorKit, COLORS, type IRgbColor, RGB_PAREN, RGBA_PAREN } from './color/color-kit';
 export * from './command-enum';
 export * from './common';
 export * from './compare';
-export * from './dayjs';
+export type { DateKit, DateKitInput, DateKitUnitType, OpUnitType } from './date-kit';
+export { dateKit } from './date-kit';
 export * from './doc-tool';
 export * from './generate';
 export * from './hash-algorithm';
@@ -32,19 +31,27 @@ export * from './intervals';
 export * from './lifecycle';
 export * from './locale';
 export { LRUHelper, LRUMap } from './lru/lru-map';
-export type { INumfmtLocaleTag } from './numfmt';
+export * from './max-row-column';
+export type { IExcelDateTimeParts, INumfmtLocaleTag, ParseOptions } from './numfmt';
 export {
+    currencySymbols,
     DEFAULT_NUMBER_FORMAT,
     DEFAULT_TEXT_FORMAT,
     DEFAULT_TEXT_FORMAT_EXCEL,
+    EXCEL_1904_OFFSET,
+    excelDateTimePartsToSerial,
+    excelSerialToDateTimeParts,
+    getDateSystemMaxSerial,
+    getNumfmtLocaleTag,
     getNumfmtParseValueFilter,
     isDefaultFormat,
     isPatternEqualWithoutDecimal,
     isTextFormat,
     numfmt,
 } from './numfmt';
+export { excelDateSerial, excelDateTimeSerial, excelSerialToDate, excelSerialToDateTime } from './numfmt/serial-date';
 export * from './object-matrix';
-export { queryObjectMatrix } from './object-matrix-query';
+export * from './random-id';
 export { moveRangeByOffset, splitIntoGrid } from './range';
 export * from './rectangle';
 export { RefAlias } from './ref-alias';

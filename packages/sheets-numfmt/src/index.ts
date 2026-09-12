@@ -14,18 +14,29 @@
  * limitations under the License.
  */
 
-export { currencySymbols, getCurrencyFormat, getCurrencySymbolByLocale, getCurrencySymbolIconByLocale, localeCurrencySymbolMap } from './base/const/currency-symbols';
+export {
+    getCurrencyFormat,
+    getCurrencySymbolByLocale,
+    getCurrencySymbolIconByLocale,
+    localeCurrencySymbolMap,
+} from './base/const/currency-symbols';
 export { CURRENCYFORMAT, DATEFMTLISG, NUMBERFORMAT } from './base/const/formatdetail';
 export { AddDecimalCommand } from './commands/commands/add-decimal.command';
 export { SetCurrencyCommand } from './commands/commands/set-currency.command';
-export { type ISetNumfmtCommandParams, SetNumfmtCommand } from './commands/commands/set-numfmt.command';
+export { SetNumfmtCommand } from './commands/commands/set-numfmt.command';
+export type { ISetNumfmtCommandParams } from './commands/commands/set-numfmt.command';
 export { SetPercentCommand } from './commands/commands/set-percent.command';
 export { SubtractDecimalCommand } from './commands/commands/subtract-decimal.command';
-export { SHEETS_NUMFMT_PLUGIN_CONFIG_KEY } from './controllers/config.schema';
-export type { IUniverSheetsNumfmtConfig } from './controllers/config.schema';
+export { SHEETS_NUMFMT_PLUGIN_CONFIG_KEY } from './config/config';
+export type { IUniverSheetsNumfmtConfig } from './config/config';
 export { SheetsNumfmtCellContentController } from './controllers/numfmt-cell-content.controller';
 export { UniverSheetsNumfmtPlugin } from './plugin';
 export { getCurrencyType } from './utils/currency';
 export { getDecimalFromPattern, getDecimalString, isPatternHasDecimal, setPatternDecimal } from './utils/decimal';
-export { getCurrencyFormatOptions, getCurrencyOptions, getDateFormatOptions, getNumberFormatOptions } from './utils/options';
+export {
+    getCurrencyFormatOptions,
+    getCurrencyOptions,
+    getDateFormatOptions,
+    getNumberFormatOptions,
+} from './utils/options';
 export { getPatternPreview, getPatternPreviewIgnoreGeneral, getPatternType } from './utils/pattern';

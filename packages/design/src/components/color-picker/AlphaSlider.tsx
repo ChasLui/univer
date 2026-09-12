@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { hsvToRgb } from './color-conversion';
 
 interface IAlphaSliderProps {
@@ -28,17 +28,21 @@ export function AlphaSlider({ hsv, alpha, onChange, onChanged }: IAlphaSliderPro
     const [isDragging, setIsDragging] = useState(false);
     const sliderRef = useRef<HTMLDivElement>(null);
     const thumbRef = useRef<HTMLDivElement>(null);
-
-    const thumbSize = useMemo(() => {
-        return thumbRef.current?.clientWidth ?? 0;
-    }, [thumbRef.current]);
+    const alphaRef = useRef(alpha);
 
     const calculateAlpha = useCallback((clientX: number) => {
         const slider = sliderRef.current;
         if (!slider) return;
 
+        const thumbSize = thumbRef.current?.clientWidth ?? 0;
+
         const rect = slider.getBoundingClientRect();
         const maxX = rect.width - thumbSize;
+        if (maxX <= 0) {
+            onChange(0);
+            return;
+        }
+
         const x = Math.max(0, Math.min(clientX - rect.left, maxX));
         onChange(Math.round(x / maxX * 100) / 100);
     }, [onChange]);
@@ -48,10 +52,14 @@ export function AlphaSlider({ hsv, alpha, onChange, onChanged }: IAlphaSliderPro
         calculateAlpha(e.clientX);
     }, [isDragging, calculateAlpha]);
 
+    useEffect(() => {
+        alphaRef.current = alpha;
+    }, [alpha]);
+
     const handlePointerUp = useCallback(() => {
         setIsDragging(false);
-        onChanged?.(alpha);
-    }, [alpha]);
+        onChanged?.(alphaRef.current);
+    }, [onChanged]);
 
     useEffect(() => {
         if (isDragging) {
@@ -69,13 +77,17 @@ export function AlphaSlider({ hsv, alpha, onChange, onChanged }: IAlphaSliderPro
 
     const getThumbPosition = () => {
         const safeAlpha = Math.min(Math.max(alpha * 100, 0), 100);
-        return `${(safeAlpha / 100) * (100 - (thumbSize / sliderRef.current?.clientWidth! * 100))}%`;
+        const thumbSize = thumbRef.current?.clientWidth ?? 0;
+        const sliderWidth = sliderRef.current?.clientWidth ?? 0;
+        const thumbOffsetPercent = sliderWidth > 0 ? (thumbSize / sliderWidth) * 100 : 0;
+
+        return `${(safeAlpha / 100) * (100 - thumbOffsetPercent)}%`;
     };
 
     const color = hsvToRgb(...hsv);
 
     return (
-        <div className="univer-relative univer-w-full univer-select-none">
+        <div data-u-comp="color-picker-alpha-slider" className="univer-relative univer-w-full univer-select-none">
             {/* Chessboard background */}
             <div
                 className="univer-absolute univer-inset-0 univer-rounded-full"
@@ -88,6 +100,7 @@ export function AlphaSlider({ hsv, alpha, onChange, onChanged }: IAlphaSliderPro
             {/* Slider */}
             <div
                 ref={sliderRef}
+                data-u-comp="color-picker-alpha-slider-track"
                 className={`
                   univer-relative univer-h-2 univer-w-full univer-cursor-pointer univer-rounded-full univer-shadow-inner
                 `}
@@ -102,10 +115,11 @@ export function AlphaSlider({ hsv, alpha, onChange, onChanged }: IAlphaSliderPro
                 {/* Indicator */}
                 <div
                     ref={thumbRef}
+                    data-u-comp="color-picker-alpha-slider-thumb"
                     className={`
                       univer-absolute univer-top-1/2 univer-box-border univer-size-2 univer-rounded-full
-                      univer-bg-transparent univer-shadow-md univer-ring-2 univer-ring-white univer-transition-transform
-                      univer-duration-75 univer-will-change-transform
+                      univer-bg-transparent univer-shadow-md univer-ring-2 univer-ring-gray-0
+                      univer-transition-transform univer-duration-75 univer-will-change-transform
                     `}
                     style={{
                         left: getThumbPosition(),

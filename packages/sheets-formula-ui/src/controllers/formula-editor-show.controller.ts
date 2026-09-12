@@ -14,9 +14,22 @@
  * limitations under the License.
  */
 
-import type { ICellDataForSheetInterceptor, ICommandInfo, IObjectMatrixPrimitiveType, IRange, IRowAutoHeightInfo, Nullable, Workbook, Worksheet } from '@univerjs/core';
+import type {
+    ICellDataForSheetInterceptor,
+    ICommandInfo,
+    IObjectMatrixPrimitiveType,
+    IRange,
+    IRowAutoHeightInfo,
+    Nullable,
+    Workbook,
+    Worksheet,
+} from '@univerjs/core';
 import type { IRenderContext, IRenderModule, SpreadsheetSkeleton } from '@univerjs/engine-render';
-import type { ISelectionWithStyle, ISetWorksheetRowAutoHeightMutationParams } from '@univerjs/sheets';
+import type {
+    ISelectionWithStyle,
+    ISetRangeValuesMutationParams,
+    ISetWorksheetRowAutoHeightMutationParams,
+} from '@univerjs/sheets';
 import {
     ColorKit,
     Disposable,
@@ -34,9 +47,16 @@ import {
     SetFormulaCalculationResultMutation,
 } from '@univerjs/engine-formula';
 import { IRenderManagerService } from '@univerjs/engine-render';
-import { BEFORE_CELL_EDIT, SetWorksheetRowAutoHeightMutation, SheetInterceptorService } from '@univerjs/sheets';
 import {
     attachSelectionWithCoord,
+    BEFORE_CELL_EDIT,
+    SetRangeValuesMutation,
+    SetWorksheetRowAutoHeightMutation,
+    SheetInterceptorService,
+    SheetSkeletonService,
+} from '@univerjs/sheets';
+import {
+    IEditorBridgeService,
     SELECTION_SHAPE_DEPTH,
     SelectionControl,
     SheetSkeletonManagerService,
@@ -52,12 +72,14 @@ export class FormulaEditorShowController extends Disposable implements IRenderMo
     constructor(
         private readonly _context: IRenderContext<Workbook>,
         @Inject(SheetInterceptorService) private readonly _sheetInterceptorService: SheetInterceptorService,
+        @Inject(SheetSkeletonService) private readonly _sheetSkeletonService: SheetSkeletonService,
         @Inject(FormulaDataModel) private readonly _formulaDataModel: FormulaDataModel,
         @Inject(ThemeService) private readonly _themeService: ThemeService,
         @IRenderManagerService private readonly _renderManagerService: IRenderManagerService,
         @Inject(SheetSkeletonManagerService) private readonly _sheetSkeletonManagerService: SheetSkeletonManagerService,
         @ICommandService private readonly _commandService: ICommandService,
-        @ILogService private readonly _logService: ILogService
+        @ILogService private readonly _logService: ILogService,
+        @IEditorBridgeService private readonly _editorBridgeService: IEditorBridgeService
     ) {
         super();
         this._initSkeletonChangeListener();
@@ -154,10 +176,34 @@ export class FormulaEditorShowController extends Disposable implements IRenderMo
 
     private _commandExecutedListener(): void {
         this.disposeWithMe(this._commandService.onCommandExecuted((command: ICommandInfo, options) => {
-            if (command.id === SetFormulaCalculationResultMutation.id || (command.id === SetArrayFormulaDataMutation.id && options && options.remove)
-            ) {
+            if (command.id === SetFormulaCalculationResultMutation.id || (command.id === SetArrayFormulaDataMutation.id && options && options.remove)) {
                 this._removeArrayFormulaRangeShape();
             }
+
+            if (command.id !== SetRangeValuesMutation.id || options?.applyFormulaCalculationResult !== true || command.params == null) {
+                return;
+            }
+
+            const params = command.params as ISetRangeValuesMutationParams;
+            const editLocation = this._editorBridgeService.getEditLocation();
+            if (
+                editLocation == null
+                || params.unitId !== this._context.unitId
+                || params.unitId !== editLocation.unitId
+                || params.subUnitId !== editLocation.sheetId
+                || this._editorBridgeService.isVisible().visible
+            ) {
+                return;
+            }
+
+            const { row, column, isInArrayFormulaRange } = editLocation;
+            const arrayFormulaCellData = this._formulaDataModel.getArrayFormulaCellData();
+            const isInArrayFormulaCell = arrayFormulaCellData?.[params.unitId]?.[params.subUnitId]?.[row]?.[column] != null;
+            if (isInArrayFormulaRange !== true && !isInArrayFormulaCell) {
+                return;
+            }
+
+            this._editorBridgeService.refreshEditCellState();
         }));
 
         this.disposeWithMe(
@@ -175,6 +221,7 @@ export class FormulaEditorShowController extends Disposable implements IRenderMo
 
     private _displayArrayFormulaRangeShape(matrixRange: IObjectMatrixPrimitiveType<IRange>, row: number, col: number, unitId: string, subUnitId: string, worksheet: Worksheet, cellInfo: Nullable<ICellDataForSheetInterceptor>): Nullable<ICellDataForSheetInterceptor> {
         // const sheetFormulaData = this._formulaDataModel.getSheetFormulaData(unitId, subUnitId);
+        let result = cellInfo;
 
         new ObjectMatrix(matrixRange).forValue((rowIndex, columnIndex, range) => {
             if (range == null) {
@@ -182,7 +229,7 @@ export class FormulaEditorShowController extends Disposable implements IRenderMo
             }
             const { startRow, startColumn, endRow, endColumn } = range;
             if (rowIndex === row && columnIndex === col) {
-                this._createArrayFormulaRangeShape(range, unitId);
+                this._createArrayFormulaRangeShape(range, unitId, subUnitId);
                 return false;
             }
             if (row >= startRow && row <= endRow && col >= startColumn && col <= endColumn) {
@@ -192,24 +239,24 @@ export class FormulaEditorShowController extends Disposable implements IRenderMo
                     return;
                 }
 
-                if (cellInfo == null) {
-                    cellInfo = {
+                if (result == null) {
+                    result = {
                         f: mainCellValue.f,
                         isInArrayFormulaRange: true,
                     };
                 }
 
-                this._createArrayFormulaRangeShape(range, unitId);
+                this._createArrayFormulaRangeShape(range, unitId, subUnitId);
                 return false;
             }
         });
 
-        return cellInfo;
+        return result;
     }
 
-    private _createArrayFormulaRangeShape(arrayRange: IRange, unitId: string): void {
-        const renderUnit = this._renderManagerService.getRenderById(unitId);
-        const skeleton = this._sheetSkeletonManagerService.getCurrentSkeleton();
+    private _createArrayFormulaRangeShape(arrayRange: IRange, unitId: string, subUnitId: string): void {
+        const renderUnit = this._renderManagerService.getRenderUnitById(unitId);
+        const skeleton = this._sheetSkeletonService.getSkeleton(unitId, subUnitId);
         if (!renderUnit || !skeleton) return;
 
         const { scene } = renderUnit;
@@ -221,7 +268,7 @@ export class FormulaEditorShowController extends Disposable implements IRenderMo
             style: {
                 strokeWidth: 1,
                 stroke: this._themeService.getColorFromTheme('primary.600'),
-                fill: new ColorKit(this._themeService.getColorFromTheme('white')).setAlpha(0).toString(),
+                fill: new ColorKit(this._themeService.getColorFromTheme('gray.0')).setAlpha(0).toString(),
                 widgets: {},
             },
         };
@@ -245,12 +292,12 @@ export class FormulaEditorShowController extends Disposable implements IRenderMo
         this._previousShape = null;
     }
 
-    private _refreshArrayFormulaRangeShape(unitId: string, _range?: IRange): void {
+    private _refreshArrayFormulaRangeShape(unitId: string, subUnitId: string): void {
         if (this._previousShape) {
             const { startRow, endRow, startColumn, endColumn } = this._previousShape.getRange();
             const range = { startRow, endRow, startColumn, endColumn };
             this._removeArrayFormulaRangeShape();
-            this._createArrayFormulaRangeShape(range, unitId);
+            this._createArrayFormulaRangeShape(range, unitId, subUnitId);
         }
     }
 
@@ -271,7 +318,7 @@ export class FormulaEditorShowController extends Disposable implements IRenderMo
     private _updateArrayFormulaRangeShape(unitId: string, subUnitId: string): void {
         if (!this._checkCurrentSheet(unitId, subUnitId)) return;
         if (!this._previousShape) return;
-        this._refreshArrayFormulaRangeShape(unitId);
+        this._refreshArrayFormulaRangeShape(unitId, subUnitId);
     }
 
     private _refreshArrayFormulaRangeShapeByRow(unitId: string, subUnitId: string, rowAutoHeightInfo: IRowAutoHeightInfo[]): void {
@@ -279,18 +326,12 @@ export class FormulaEditorShowController extends Disposable implements IRenderMo
 
         if (!this._previousShape) return;
 
-        const { startRow: shapeStartRow, endRow: shapeEndRow, startColumn: shapeStartColumn, endColumn: shapeEndColumn } = this._previousShape.getRange();
+        const { startRow: shapeStartRow } = this._previousShape.getRange();
 
         for (let i = 0; i < rowAutoHeightInfo.length; i++) {
             const { row } = rowAutoHeightInfo[i];
             if (shapeStartRow >= row) {
-                const shapeRange = {
-                    startRow: shapeStartRow,
-                    endRow: shapeEndRow,
-                    startColumn: shapeStartColumn,
-                    endColumn: shapeEndColumn,
-                };
-                this._refreshArrayFormulaRangeShape(unitId, shapeRange);
+                this._refreshArrayFormulaRangeShape(unitId, subUnitId);
                 break;
             }
         }

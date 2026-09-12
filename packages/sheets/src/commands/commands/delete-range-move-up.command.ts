@@ -27,7 +27,7 @@ import {
 } from '@univerjs/core';
 import { SheetsSelectionsService } from '../../services/selections/selection.service';
 import { SheetInterceptorService } from '../../services/sheet-interceptor/sheet-interceptor.service';
-import { getRemoveRangeMutations } from '../utils/handle-range-mutation';
+import { getRemoveRangeMutations } from '../utils/handle-range.mutation';
 import { followSelectionOperation } from './utils/selection-utils';
 import { getSheetCommandTarget } from './utils/target-util';
 
@@ -54,9 +54,10 @@ export const DeleteRangeMoveUpCommand: ICommand = {
         if (!target) return false;
 
         const { unitId, subUnitId, workbook, worksheet } = target;
-        let range = params?.range;
+        let range: IRange | undefined = params?.range;
         if (!range) {
-            range = selectionManagerService.getCurrentLastSelection()?.range!;
+            const currentSelection = selectionManagerService.getCurrentLastSelection();
+            range = currentSelection?.range as IRange | undefined;
         }
         if (!range) return false;
 

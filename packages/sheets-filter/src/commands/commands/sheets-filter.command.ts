@@ -15,14 +15,38 @@
  */
 
 import type { IAccessor, ICommand, IMutationInfo, IRange, Nullable, Workbook } from '@univerjs/core';
-import type { ISheetCommandSharedParams } from '@univerjs/sheets';
+import type { IMarkDirtyFilterChangeMutationParams, ISheetCommandSharedParams } from '@univerjs/sheets';
+import type { LocaleKey } from '../../locale/types';
 import type { FilterColumn } from '../../models/filter-model';
 import type { IAutoFilter, IFilterColumn } from '../../models/types';
-import type { ISetSheetsFilterCriteriaMutationParams, ISetSheetsFilterRangeMutationParams } from '../mutations/sheets-filter.mutation';
-import { CommandType, ErrorService, ICommandService, IUndoRedoService, IUniverInstanceService, LocaleService, sequenceExecute, UniverInstanceType } from '@univerjs/core';
-import { expandToContinuousRange, getSheetCommandTarget, isSingleCellSelection, SheetsSelectionsService } from '@univerjs/sheets';
+import type {
+    ISetSheetsFilterCriteriaMutationParams,
+    ISetSheetsFilterRangeMutationParams,
+} from '../mutations/sheets-filter.mutation';
+import {
+    CommandType,
+    ErrorService,
+    ICommandService,
+    IUndoRedoService,
+    IUniverInstanceService,
+    LocaleService,
+    sequenceExecute,
+    UniverInstanceType,
+} from '@univerjs/core';
+import {
+    expandToContinuousRange,
+    getSheetCommandTarget,
+    isSingleCellSelection,
+    MarkDirtyFilterChangeMutation,
+    SheetsSelectionsService,
+} from '@univerjs/sheets';
 import { SheetsFilterService } from '../../services/sheet-filter.service';
-import { ReCalcSheetsFilterMutation, RemoveSheetsFilterMutation, SetSheetsFilterCriteriaMutation, SetSheetsFilterRangeMutation } from '../mutations/sheets-filter.mutation';
+import {
+    ReCalcSheetsFilterMutation,
+    RemoveSheetsFilterMutation,
+    SetSheetsFilterCriteriaMutation,
+    SetSheetsFilterRangeMutation,
+} from '../mutations/sheets-filter.mutation';
 
 /**
  * Parameters of command {@link SetSheetFilterRangeCommand}.
@@ -56,7 +80,7 @@ export const SetSheetFilterRangeCommand: ICommand<ISetSheetFilterRangeCommandPar
         if (range.endRow === range.startRow) {
             const errorService = accessor.get(ErrorService);
             const localeService = accessor.get(LocaleService);
-            errorService.emit(localeService.t('sheets-filter.command.not-valid-filter-range'));
+            errorService.emit(localeService.t<LocaleKey>('sheets-filter.command.not-valid-filter-range'));
             return false;
         }
 
@@ -83,28 +107,34 @@ export const RemoveSheetFilterCommand: ICommand<ISheetCommandSharedParams> = {
     id: 'sheet.command.remove-sheet-filter',
     type: CommandType.COMMAND,
     handler: (accessor, params: ISheetCommandSharedParams) => {
-        const univerInstanceService = accessor.get(IUniverInstanceService);
+        const target = getSheetCommandTarget(accessor.get(IUniverInstanceService), params);
+        if (!target) return false;
+
         const sheetsFilterService = accessor.get(SheetsFilterService);
-        const commandService = accessor.get(ICommandService);
-
-        const undoRedoService = accessor.get(IUndoRedoService);
-
-        const commandTarget = getSheetCommandTarget(univerInstanceService, params);
-        if (!commandTarget) return false;
-
-        // If there is a filter model, we should remove it and prepare undo redo.
-        const { unitId, subUnitId } = commandTarget;
+        const { unitId, subUnitId } = target;
         const filterModel = sheetsFilterService.getFilterModel(unitId, subUnitId);
         if (!filterModel) return false;
 
-        const autoFilter = filterModel?.serialize();
+        const filterRange = filterModel.getRange();
+        if (!filterRange) return false;
+
+        const commandService = accessor.get(ICommandService);
+        const undoRedoService = accessor.get(IUndoRedoService);
+
+        const autoFilter = filterModel.serialize();
         const undoMutations = destructFilterModel(unitId, subUnitId, autoFilter);
+
         const result = commandService.syncExecuteCommand(RemoveSheetsFilterMutation.id, { unitId, subUnitId });
         if (result) {
             undoRedoService.pushUndoRedo({
                 unitID: unitId,
                 undoMutations,
                 redoMutations: [{ id: RemoveSheetsFilterMutation.id, params: { unitId, subUnitId } }],
+            });
+            commandService.executeCommand<IMarkDirtyFilterChangeMutationParams>(MarkDirtyFilterChangeMutation.id, {
+                unitId,
+                subUnitId,
+                filterRange,
             });
         }
 
@@ -123,7 +153,7 @@ export const SmartToggleSheetsFilterCommand: ICommand = {
         const sheetsFilterService = accessor.get(SheetsFilterService);
         const commandService = accessor.get(ICommandService);
 
-        const currentWorkbook = univerInstanceService.getCurrentUnitForType<Workbook>(UniverInstanceType.UNIVER_SHEET);
+        const currentWorkbook = univerInstanceService.getCurrentUnitOfType<Workbook>(UniverInstanceType.UNIVER_SHEET);
         const currentWorksheet = currentWorkbook?.getActiveSheet();
         if (!currentWorksheet || !currentWorkbook) return false;
 
@@ -178,16 +208,20 @@ export const SetSheetsFilterCriteriaCommand: ICommand<ISetSheetsFilterCriteriaCo
     id: 'sheet.command.set-filter-criteria',
     type: CommandType.COMMAND,
     handler: (accessor: IAccessor, params: ISetSheetsFilterCriteriaCommandParams) => {
-        const sheetsFilterService = accessor.get(SheetsFilterService);
-        const commandService = accessor.get(ICommandService);
-        const undoRedoService = accessor.get(IUndoRedoService);
+        const target = getSheetCommandTarget(accessor.get(IUniverInstanceService), params);
+        if (!target) return false;
 
-        const { unitId, subUnitId, col, criteria } = params;
+        const sheetsFilterService = accessor.get(SheetsFilterService);
+        const { unitId, subUnitId } = target;
         const filterModel = sheetsFilterService.getFilterModel(unitId, subUnitId);
         if (!filterModel) return false;
 
-        const range = filterModel.getRange();
-        if (!range || col < range.startColumn || col > range.endColumn) return false;
+        const { col, criteria } = params;
+        const filterRange = filterModel.getRange();
+        if (!filterRange || col < filterRange.startColumn || col > filterRange.endColumn) return false;
+
+        const commandService = accessor.get(ICommandService);
+        const undoRedoService = accessor.get(IUndoRedoService);
 
         const filterColumn = filterModel.getFilterColumn(col);
         const undoMutation = destructFilterColumn(unitId, subUnitId, col, filterColumn);
@@ -208,6 +242,11 @@ export const SetSheetsFilterCriteriaCommand: ICommand<ISetSheetsFilterCriteriaCo
                 undoMutations: [undoMutation],
                 redoMutations: [redoMutation],
             });
+            commandService.executeCommand<IMarkDirtyFilterChangeMutationParams>(MarkDirtyFilterChangeMutation.id, {
+                unitId,
+                subUnitId,
+                filterRange,
+            });
         }
 
         return result;
@@ -222,17 +261,19 @@ export const ClearSheetsFilterCriteriaCommand: ICommand<ISheetCommandSharedParam
     id: 'sheet.command.clear-filter-criteria',
     type: CommandType.COMMAND,
     handler: (accessor: IAccessor, params) => {
+        const target = getSheetCommandTarget(accessor.get(IUniverInstanceService), params);
+        if (!target) return false;
+
         const sheetsFilterService = accessor.get(SheetsFilterService);
+        const { unitId, subUnitId } = target;
+        const filterModel = sheetsFilterService.getFilterModel(unitId, subUnitId);
+        if (!filterModel) return false;
+
+        const filterRange = filterModel.getRange();
+        if (!filterRange) return false;
+
         const undoRedoService = accessor.get(IUndoRedoService);
         const commandService = accessor.get(ICommandService);
-        const instanceSrv = accessor.get(IUniverInstanceService);
-
-        const commandTarget = getSheetCommandTarget(instanceSrv, params);
-        if (!commandTarget) return false;
-
-        const { unitId, subUnitId } = commandTarget;
-        const filterModel = sheetsFilterService.getFilterModel(commandTarget.unitId, commandTarget.subUnitId);
-        if (!filterModel) return false;
 
         const autoFilter = filterModel.serialize();
         const undoMutations = destructFilterCriteria(unitId, subUnitId, autoFilter);
@@ -245,7 +286,11 @@ export const ClearSheetsFilterCriteriaCommand: ICommand<ISheetCommandSharedParam
                 undoMutations,
                 redoMutations,
             });
-
+            commandService.executeCommand<IMarkDirtyFilterChangeMutationParams>(MarkDirtyFilterChangeMutation.id, {
+                unitId,
+                subUnitId,
+                filterRange,
+            });
             return true;
         }
 

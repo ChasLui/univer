@@ -18,22 +18,18 @@ import type { ISheetNote } from '@univerjs/sheets-note';
 import { SheetsNoteModel } from '@univerjs/sheets-note';
 import { FWorksheet } from '@univerjs/sheets/facade';
 
-export interface ISheetNoteInfo extends ISheetNote {
-    row: number;
-    col: number;
-}
-
 /**
  * @ignore
  */
-export interface IFSheetsNoteWorksheet {
+export interface IFWorksheetNoteMixin {
     /**
      * Get all annotations in the worksheet
-     * @returns {ISheetNoteInfo[]} An array of all annotations in the worksheet
+     * @returns {ISheetNote[]} An array of all annotations in the worksheet
      * @example
      * ```ts
      * const fWorkbook = univerAPI.getActiveWorkbook();
-     * const fWorksheet = fWorkbook.getActiveSheet();
+     * const fWorksheet = fWorkbook.getSheetByName('Sheet1');
+     * if (!fWorksheet) return;
      * const notes = fWorksheet.getNotes();
      * console.log(notes);
      *
@@ -43,29 +39,22 @@ export interface IFSheetsNoteWorksheet {
      * });
      * ```
      */
-    getNotes(): ISheetNoteInfo[];
+    getNotes(): ISheetNote[];
 }
 
-export class FSheetsNoteWorksheet extends FWorksheet implements IFSheetsNoteWorksheet {
-    override getNotes(): ISheetNoteInfo[] {
+export class FWorksheetNoteMixin extends FWorksheet implements IFWorksheetNoteMixin {
+    override getNotes(): ISheetNote[] {
         const model = this._injector.get(SheetsNoteModel);
         const notes = model.getSheetNotes(this.getWorkbook().getUnitId(), this.getSheetId());
-        const arr: ISheetNoteInfo[] = [];
-
-        notes?.forValue((row, col, note) => {
-            arr.push({
-                ...note,
-                row,
-                col,
-            });
-        });
-
-        return arr;
+        if (!notes) {
+            return [];
+        }
+        return Array.from(notes.values()).map((note) => ({ ...note }));
     }
 }
 
-FWorksheet.extend(FSheetsNoteWorksheet);
+FWorksheet.extend(FWorksheetNoteMixin);
 declare module '@univerjs/sheets/facade' {
     // eslint-disable-next-line ts/naming-convention
-    interface FWorksheet extends IFSheetsNoteWorksheet { }
+    interface FWorksheet extends IFWorksheetNoteMixin { }
 }

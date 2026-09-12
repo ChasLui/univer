@@ -23,7 +23,7 @@ export type SortColumnSpec = { column: number; ascending: boolean } | number;
 /**
  * @ignore
  */
-export interface IFRangeSort {
+export interface IFRangeSheetsSortMixin {
     /**
      * Sorts the cells in the given range, by column(s) and order specified.
      * @param {SortColumnSpec | SortColumnSpec[]} column The column index with order or an array of column indexes with order. The range first column index is 0.
@@ -31,7 +31,8 @@ export interface IFRangeSort {
      * @example
      * ```typescript
      * const fWorkbook = univerAPI.getActiveWorkbook();
-     * const fWorksheet = fWorkbook.getActiveSheet();
+     * const fWorksheet = fWorkbook.getSheetByName('Sheet1');
+     * if (!fWorksheet) return;
      * const fRange = fWorksheet.getRange('D1:G10');
      *
      * // Sorts the range by the first column in ascending order.
@@ -47,7 +48,7 @@ export interface IFRangeSort {
     sort(column: SortColumnSpec | SortColumnSpec[]): FRange;
 }
 
-export class FRangeSort extends FRange implements IFRangeSort {
+export class FRangeSheetsSortMixin extends FRange implements IFRangeSheetsSortMixin {
     override sort(column: SortColumnSpec | SortColumnSpec[]): FRange {
         const columnBase = this._range.startColumn;
         const columns = Array.isArray(column) ? column : [column];
@@ -72,8 +73,8 @@ export class FRangeSort extends FRange implements IFRangeSort {
     }
 }
 
-FRange.extend(FRangeSort);
+FRange.extend(FRangeSheetsSortMixin);
 declare module '@univerjs/sheets/facade' {
     // eslint-disable-next-line ts/naming-convention
-    interface FRange extends IFRangeSort {}
+    interface FRange extends IFRangeSheetsSortMixin {}
 }

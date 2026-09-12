@@ -14,12 +14,18 @@
  * limitations under the License.
  */
 
-import { cleanup, render } from '@testing-library/react';
+import { cleanup, fireEvent, render } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import enUS from '../../../locale/en-US';
+import { ConfigProvider } from '../../config-provider/ConfigProvider';
 import { Dialog } from '../Dialog';
+import { MobileDialog } from '../MobileDialog';
 import '@testing-library/jest-dom/vitest';
 
-afterEach(cleanup);
+afterEach(() => {
+    cleanup();
+    vi.unstubAllGlobals();
+});
 
 describe('Dialog', () => {
     it('should not render when open is false', () => {
@@ -53,9 +59,13 @@ describe('Dialog', () => {
     it('should call onOk and onCancel', () => {
         const onOk = vi.fn();
         const onCancel = vi.fn();
-        const { getByText } = render(<Dialog open showOk showCancel onOk={onOk} onCancel={onCancel}>content</Dialog>);
-        getByText(/ok|确定/i).click();
-        getByText(/cancel|取消/i).click();
+        const { getByText } = render(
+            <ConfigProvider locale={enUS.design} mountContainer={document.body}>
+                <Dialog open showOk showCancel onOk={onOk} onCancel={onCancel}>content</Dialog>
+            </ConfigProvider>
+        );
+        getByText(enUS.design.Confirm.confirm).click();
+        getByText(enUS.design.Confirm.cancel).click();
         expect(onOk).toHaveBeenCalled();
         expect(onCancel).toHaveBeenCalled();
     });
@@ -69,5 +79,84 @@ describe('Dialog', () => {
             mask.dispatchEvent(new MouseEvent('click', { bubbles: true }));
             expect(onOpenChange).not.toHaveBeenCalledWith(false);
         }
+    });
+
+    it('should apply width and draggable styles', () => {
+        const { rerender } = render(
+            <Dialog open title="drag" width={320} draggable>
+                content
+            </Dialog>
+        );
+
+        const content = document.querySelector('[role="dialog"]') as HTMLElement;
+        expect(content.style.width).toBe('320px');
+        expect(content.style.transform).toContain('translate(');
+
+        const header = document.querySelector('[data-drag-handle="true"]') as HTMLElement;
+        expect(header).toBeInTheDocument();
+        fireEvent.mouseDown(header, { clientX: 20, clientY: 20 });
+        fireEvent.mouseMove(document, { clientX: 40, clientY: 50 });
+        fireEvent.mouseUp(document);
+
+        rerender(
+            <Dialog open title="drag" width="40rem" draggable>
+                content
+            </Dialog>
+        );
+        expect((document.querySelector('[role="dialog"]') as HTMLElement).style.width).toBe('40rem');
+    });
+
+    it('should honor keyboard=false and trigger open change from close button', () => {
+        const onOpenChange = vi.fn();
+        const onClose = vi.fn();
+        render(
+            <Dialog open keyboard={false} onOpenChange={onOpenChange} onClose={onClose}>
+                content
+            </Dialog>
+        );
+
+        fireEvent.keyDown(document, { key: 'Escape' });
+
+        const closeBtn = (document.querySelector('.univer-sr-only') as HTMLElement | null)?.parentElement as HTMLElement | null;
+        expect(closeBtn).toBeInTheDocument();
+        if (!closeBtn) {
+            throw new Error('Close button should exist');
+        }
+        closeBtn.click();
+        expect(onOpenChange).toHaveBeenCalledWith(false);
+        expect(onClose).toHaveBeenCalled();
+    });
+
+    it('should render inside the configured mount container with rtl direction', () => {
+        const mountContainer = document.createElement('div');
+        mountContainer.dir = 'rtl';
+        document.body.appendChild(mountContainer);
+
+        render(
+            <ConfigProvider mountContainer={mountContainer} direction="rtl">
+                <Dialog open title="RTL Title">content</Dialog>
+            </ConfigProvider>
+        );
+
+        const dialog = mountContainer.querySelector('[role="dialog"]') as HTMLElement;
+        expect(dialog).toBeInTheDocument();
+        expect(dialog.dir).toBe('rtl');
+
+        mountContainer.remove();
+    });
+
+    it('should render a touch-first bottom surface from MobileDialog', () => {
+        vi.stubGlobal('CSS', { supports: () => false });
+        render(
+            <ConfigProvider locale={enUS.design} mountContainer={document.body}>
+                <MobileDialog open title="Mobile title" showOk>content</MobileDialog>
+            </ConfigProvider>
+        );
+
+        const dialog = document.querySelector('[role="dialog"]') as HTMLElement;
+        expect(dialog).toHaveClass('!univer-bottom-0');
+        expect(dialog).toHaveStyle({ bottom: '0px', position: 'fixed', width: '100%' });
+        expect(dialog.style.maxHeight).toBe('80vh');
+        expect(dialog.querySelector('[data-slot="dialog-footer"]')).toBeInTheDocument();
     });
 });

@@ -15,7 +15,7 @@
  */
 
 import type { Dependency } from '@univerjs/core';
-import type { IUniverSheetsDataValidationConfig } from './controllers/config.schema';
+import type { IUniverSheetsDataValidationConfig } from './config/config';
 import {
     DependentOn,
     ICommandService,
@@ -27,7 +27,10 @@ import {
     UniverInstanceType,
 } from '@univerjs/core';
 import { UniverDataValidationPlugin } from '@univerjs/data-validation';
+import { UniverFormulaEnginePlugin } from '@univerjs/engine-formula';
+import { UniverSheetsPlugin } from '@univerjs/sheets';
 import { UniverSheetsFormulaPlugin } from '@univerjs/sheets-formula';
+import pkg from '../package.json';
 import {
     AddSheetDataValidationCommand,
     ClearRangeDataValidationCommand,
@@ -38,7 +41,7 @@ import {
     UpdateSheetDataValidationSettingCommand,
 } from './commands/commands/data-validation.command';
 import { DATA_VALIDATION_PLUGIN_NAME } from './common/const';
-import { defaultPluginConfig, SHEETS_DATA_VALIDATION_PLUGIN_CONFIG_KEY } from './controllers/config.schema';
+import { defaultPluginConfig, SHEETS_DATA_VALIDATION_PLUGIN_CONFIG_KEY } from './config/config';
 import { DataValidationFormulaRefRangeController } from './controllers/dv-formula-ref-range.controller';
 import { DataValidationFormulaController } from './controllers/dv-formula.controller';
 import { DataValidationRefRangeController } from './controllers/dv-ref-range.controller';
@@ -49,11 +52,18 @@ import { DataValidationCacheService } from './services/dv-cache.service';
 import { DataValidationCustomFormulaService } from './services/dv-custom-formula.service';
 import { DataValidationFormulaService } from './services/dv-formula.service';
 import { DataValidationListCacheService } from './services/dv-list-cache.service';
-import { SheetsDataValidationValidatorService } from './services/dv-validator-service';
+import { SheetsDataValidationValidatorService } from './services/dv-validator.service';
 
-@DependentOn(UniverSheetsFormulaPlugin, UniverDataValidationPlugin)
+@DependentOn(
+    UniverDataValidationPlugin,
+    UniverFormulaEnginePlugin,
+    UniverSheetsPlugin,
+    UniverSheetsFormulaPlugin
+)
 export class UniverSheetsDataValidationPlugin extends Plugin {
     static override pluginName = DATA_VALIDATION_PLUGIN_NAME;
+    static override packageName = pkg.name;
+    static override version = pkg.version;
     static override type = UniverInstanceType.UNIVER_SHEET;
 
     constructor(

@@ -40,6 +40,10 @@ export class Countif extends BaseFunction {
 
         if (criteria.isReferenceObject()) {
             _criteria = (criteria as BaseReferenceObject).toArrayValueObject();
+            if ((_criteria as ArrayValueObject).getRowCount() === 1 && (_criteria as ArrayValueObject).getColumnCount() === 1) {
+                const firstCriteria = (_criteria as ArrayValueObject).get(0, 0) as BaseValueObject;
+                _criteria = firstCriteria.isNull() ? NumberValueObject.create(0) : firstCriteria;
+            }
         }
 
         if (_criteria.isArray()) {
@@ -58,12 +62,12 @@ export class Countif extends BaseFunction {
     private _handleSingleObject(range: FunctionVariantType, criteria: BaseValueObject): BaseValueObject {
         const _range = (range as BaseReferenceObject).toArrayValueObject();
 
-        let resultArrayObject = valueObjectCompare(_range, criteria);
+        let resultArrayObject = valueObjectCompare(_range, criteria) as ArrayValueObject;
 
         // If the condition is a numeric comparison, only numbers are counted, otherwise text is counted.
-        resultArrayObject = filterSameValueObjectResult(resultArrayObject as ArrayValueObject, _range, criteria);
+        resultArrayObject = filterSameValueObjectResult(resultArrayObject, _range, criteria);
 
-        const picked = (_range as ArrayValueObject).pick(resultArrayObject as ArrayValueObject);
+        const picked = _range.pick(resultArrayObject);
         return this._countA(picked);
     }
 

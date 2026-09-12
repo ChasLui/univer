@@ -14,13 +14,11 @@
  * limitations under the License.
  */
 
-import type { ITableDefaultThemeStyle, IUniverSheetsTableConfig } from './config.schema';
-
+import type { ITableDefaultThemeStyle, IUniverSheetsTableConfig } from '../config/config';
 import { Disposable, IConfigService, Inject } from '@univerjs/core';
-
 import { RangeThemeStyle, SheetRangeThemeModel, SheetRangeThemeService } from '@univerjs/sheets';
-import { TableManager } from '../model/table-manager';
-import { SHEETS_TABLE_PLUGIN_CONFIG_KEY } from './config.schema';
+import { SHEETS_TABLE_PLUGIN_CONFIG_KEY } from '../config/config';
+import { TableManager } from '../models/table-manager';
 import { tableThemeConfig } from './table-theme.factory';
 
 export class SheetsTableThemeController extends Disposable {

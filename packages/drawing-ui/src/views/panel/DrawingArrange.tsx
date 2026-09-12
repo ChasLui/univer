@@ -15,12 +15,12 @@
  */
 
 import type { IDrawingParam } from '@univerjs/core';
-import { ArrangeTypeEnum, LocaleService } from '@univerjs/core';
+import type { LocaleKey } from '../../locale/types';
+import { ArrangeTypeEnum, ICommandService, LocaleService } from '@univerjs/core';
 import { Button, clsx } from '@univerjs/design';
 import { IDrawingManagerService } from '@univerjs/drawing';
-import { BottomIcon, MoveDownIcon, MoveUpIcon, TopmostIcon } from '@univerjs/icons';
-import { useDependency } from '@univerjs/ui';
-import { useEffect, useState } from 'react';
+import { IconManager, useDependency, useObservable } from '@univerjs/ui';
+import { SetDrawingArrangeOperation } from '../../commands/operations/drawing-arrange.operation';
 
 export interface IDrawingArrangeProps {
     arrangeShow: boolean;
@@ -32,25 +32,23 @@ export const DrawingArrange = (props: IDrawingArrangeProps) => {
 
     const localeService = useDependency(LocaleService);
     const drawingManagerService = useDependency(IDrawingManagerService);
+    const commandService = useDependency(ICommandService);
+    const iconManager = useDependency(IconManager);
 
-    const [drawings, setDrawings] = useState<IDrawingParam[]>(focusDrawings);
+    const MoveUpIcon = iconManager.get('MoveUpIcon');
+    const MoveDownIcon = iconManager.get('MoveDownIcon');
+    const TopmostIcon = iconManager.get('TopmostIcon');
+    const BottomIcon = iconManager.get('BottomIcon');
 
-    useEffect(() => {
-        const focusDispose = drawingManagerService.focus$.subscribe((drawings) => {
-            setDrawings(drawings);
-        });
-
-        return () => {
-            focusDispose.unsubscribe();
-        };
-    }, []);
+    const drawings = useObservable(
+        () => drawingManagerService.focus$,
+        focusDrawings,
+        false,
+        [drawingManagerService]
+    );
 
     const onArrangeBtnClick = (arrangeType: ArrangeTypeEnum) => {
-        const unitId = drawings[0].unitId;
-        const subUnitId = drawings[0].subUnitId;
-        const drawingIds = drawings.map((drawing) => drawing.drawingId);
-
-        drawingManagerService.featurePluginOrderUpdateNotification({ unitId, subUnitId, drawingIds, arrangeType });
+        commandService.syncExecuteCommand(SetDrawingArrangeOperation.id, { arrangeType, drawings });
     };
 
     return (
@@ -65,25 +63,25 @@ export const DrawingArrange = (props: IDrawingArrangeProps) => {
                   dark:!univer-text-gray-200
                 `}
             >
-                <div>{localeService.t('image-panel.arrange.title')}</div>
+                <div>{localeService.t<LocaleKey>('drawing-ui.image-panel.arrange.title')}</div>
             </header>
 
             <div className="univer-grid univer-grid-cols-2 univer-gap-2">
                 <Button onClick={() => { onArrangeBtnClick(ArrangeTypeEnum.forward); }}>
                     <MoveUpIcon />
-                    {localeService.t('image-panel.arrange.forward')}
+                    {localeService.t<LocaleKey>('drawing-ui.image-panel.arrange.forward')}
                 </Button>
                 <Button onClick={() => { onArrangeBtnClick(ArrangeTypeEnum.backward); }}>
                     <MoveDownIcon />
-                    {localeService.t('image-panel.arrange.backward')}
+                    {localeService.t<LocaleKey>('drawing-ui.image-panel.arrange.backward')}
                 </Button>
                 <Button onClick={() => { onArrangeBtnClick(ArrangeTypeEnum.front); }}>
                     <TopmostIcon />
-                    {localeService.t('image-panel.arrange.front')}
+                    {localeService.t<LocaleKey>('drawing-ui.image-panel.arrange.front')}
                 </Button>
                 <Button onClick={() => { onArrangeBtnClick(ArrangeTypeEnum.back); }}>
                     <BottomIcon />
-                    {localeService.t('image-panel.arrange.back')}
+                    {localeService.t<LocaleKey>('drawing-ui.image-panel.arrange.back')}
                 </Button>
             </div>
         </div>

@@ -16,7 +16,7 @@
 
 import type { Observable } from 'rxjs';
 import type { IDisposable } from '../../common/di';
-import type { UnitModel, UnitType } from '../../common/unit';
+import type { UnitModel } from '../../common/unit';
 import type { Nullable } from '../../shared';
 import { BehaviorSubject, distinctUntilChanged, filter, map, Subject } from 'rxjs';
 import { createIdentifier, Inject, Injector } from '../../common/di';
@@ -24,8 +24,7 @@ import { UniverInstanceType } from '../../common/unit';
 import { DocumentDataModel } from '../../docs/data-model/document-data-model';
 import { Disposable } from '../../shared/lifecycle';
 import { Workbook } from '../../sheets/workbook';
-import { SlideDataModel } from '../../slides/slide-model';
-import { FOCUSING_DOC, FOCUSING_SHEET, FOCUSING_SLIDE, FOCUSING_UNIT } from '../context/context';
+import { FOCUSING_BOARD, FOCUSING_DOC, FOCUSING_SHEET, FOCUSING_SLIDE, FOCUSING_UNIT } from '../context/context';
 import { IContextService } from '../context/context.service';
 import { ILogService } from '../log/log.service';
 
@@ -39,6 +38,33 @@ export interface ICreateUnitOptions {
      * @default true
      */
     makeCurrent?: boolean;
+    /**
+     * If product UI render services should skip their default main-canvas render
+     * creation. Embedded units create their render explicitly into a host-owned
+     * container instead.
+     *
+     * @default false
+     */
+    skipAutoRender?: boolean;
+    /**
+     * If render services should create the render unit as an embedded/non-main
+     * render. Embedded renders are mounted explicitly by a host container and
+     * must not mutate global workbench state while resolving their local view.
+     *
+     * @default false
+     */
+    embeddedRender?: boolean;
+    /**
+     * Optional parent injector for an embedded render unit. Render modules will
+     * resolve their dependencies from this injector before falling back to the
+     * root injector.
+     */
+    renderParentInjector?: Injector;
+}
+
+interface ICreateUnitEvent<T extends UnitModel = UnitModel> {
+    unit: T;
+    options?: ICreateUnitOptions;
 }
 
 /**
@@ -49,9 +75,9 @@ export interface ICreateUnitOptions {
  */
 export interface IUniverInstanceService {
     /** Omits value when a new UnitModel is created. */
-    unitAdded$: Observable<UnitModel>;
+    unitAdded$: Observable<ICreateUnitEvent>;
     /** Subscribe to curtain type of units' creation. */
-    getTypeOfUnitAdded$<T extends UnitModel>(type: UnitType): Observable<T>;
+    getTypeOfUnitAdded$<T extends UnitModel>(type: UniverInstanceType): Observable<ICreateUnitEvent<T>>;
 
     /** @ignore */
     __addUnit(unit: UnitModel): void;
@@ -59,7 +85,7 @@ export interface IUniverInstanceService {
     /** Omits value when a UnitModel is disposed. */
     unitDisposed$: Observable<UnitModel>;
     /** Subscribe to curtain type of units' disposing. */
-    getTypeOfUnitDisposed$<T extends UnitModel>(type: UnitType): Observable<T>;
+    getTypeOfUnitDisposed$<T extends UnitModel>(type: UniverInstanceType): Observable<T>;
 
     /**
      * An observable value that emits the id of the focused unit. A Univer app instance
@@ -74,37 +100,28 @@ export interface IUniverInstanceService {
     /** Get the currently focused unit. */
     getFocusedUnit(): Nullable<UnitModel>;
 
-    /** @deprecated Use `getCurrentUnitOfType` instead. */
-    getCurrentUnitForType<T extends UnitModel>(type: UnitType): Nullable<T>;
-    getCurrentUnitOfType<T extends UnitModel>(type: UnitType): Nullable<T>;
+    getCurrentUnitOfType<T extends UnitModel>(type: UniverInstanceType): Nullable<T>;
     setCurrentUnitForType(unitId: string): void;
-    getCurrentTypeOfUnit$<T extends UnitModel>(type: UnitType): Observable<Nullable<T>>;
+    getCurrentTypeOfUnit$<T extends UnitModel>(type: UniverInstanceType): Observable<Nullable<T>>;
 
     /** Create a unit with snapshot info. */
-    createUnit<T, U extends UnitModel>(type: UnitType, data: Partial<T>, options?: ICreateUnitOptions): U;
+    createUnit<T, U extends UnitModel>(type: UniverInstanceType, data: Partial<T>, options?: ICreateUnitOptions): U;
+    /** Get the options originally used to create a unit. */
+    getUnitCreateOptions(unitId: string): Nullable<ICreateUnitOptions>;
     /** Dispose a unit  */
     disposeUnit(unitId: string): boolean;
 
-    registerCtorForType<T extends UnitModel>(type: UnitType, ctor: new (...args: any[]) => T): IDisposable;
+    registerCtorForType<T extends UnitModel>(type: UniverInstanceType, ctor: new (...args: any[]) => T): IDisposable;
 
-    /** @deprecated */
-    changeDoc(unitId: string, doc: DocumentDataModel): void;
-
-    getUnit<T extends UnitModel>(id: string, type?: UnitType): Nullable<T>;
-    getAllUnitsForType<T>(type: UnitType): T[];
-    getUnitType(unitId: string): UnitType;
-
-    /** @deprecated */
-    getUniverSheetInstance(unitId: string): Nullable<Workbook>;
-    /** @deprecated */
-    getUniverDocInstance(unitId: string): Nullable<DocumentDataModel>;
-    /** @deprecated */
-    getCurrentUniverDocInstance(): Nullable<DocumentDataModel>;
+    getUnit<T extends UnitModel>(id: string, type?: UniverInstanceType): Nullable<T>;
+    getAllUnitsForType<T>(type: UniverInstanceType): T[];
+    getUnitType(unitId: string): UniverInstanceType;
 }
 
 export const IUniverInstanceService = createIdentifier<IUniverInstanceService>('univer.current');
 export class UniverInstanceService extends Disposable implements IUniverInstanceService {
-    private readonly _unitsByType = new Map<UnitType, UnitModel[]>();
+    private readonly _unitsByType = new Map<UniverInstanceType, UnitModel[]>();
+    private readonly _unitCreateOptions = new Map<string, ICreateUnitOptions>();
 
     constructor(
         @Inject(Injector) private readonly _injector: Injector,
@@ -124,26 +141,27 @@ export class UniverInstanceService extends Disposable implements IUniverInstance
         this._currentUnits.forEach((unit) => unit?.dispose());
         this._currentUnits.clear();
         this._unitsByType.clear();
+        this._unitCreateOptions.clear();
     }
 
     private _createHandler!: (
-        type: UnitType,
+        type: UniverInstanceType,
         data: unknown,
         ctor: UnitCtor,
         options?: ICreateUnitOptions
     ) => UnitModel;
 
-    __setCreateHandler(handler: (type: UnitType, data: unknown, ctor: UnitCtor, options?: ICreateUnitOptions) => UnitModel): void {
+    __setCreateHandler(handler: (type: UniverInstanceType, data: unknown, ctor: UnitCtor, options?: ICreateUnitOptions) => UnitModel): void {
         this._createHandler = handler;
     }
 
-    createUnit<T, U extends UnitModel>(type: UnitType, data: T, options?: ICreateUnitOptions): U {
+    createUnit<T, U extends UnitModel>(type: UniverInstanceType, data: T, options?: ICreateUnitOptions): U {
         const model = this._createHandler(type, data, this._ctorByType.get(type)!, options);
         return model as U;
     }
 
-    private readonly _ctorByType = new Map<UnitType, new () => UnitModel>();
-    registerCtorForType<T extends UnitModel>(type: UnitType, ctor: new () => T): IDisposable {
+    private readonly _ctorByType = new Map<UniverInstanceType, new () => UnitModel>();
+    registerCtorForType<T extends UnitModel>(type: UniverInstanceType, ctor: new () => T): IDisposable {
         this._ctorByType.set(type, ctor);
 
         return {
@@ -153,33 +171,36 @@ export class UniverInstanceService extends Disposable implements IUniverInstance
         };
     }
 
-    private _currentUnits = new Map<UnitType, Nullable<UnitModel>>();
-    private readonly _currentUnits$ = new BehaviorSubject<Map<UnitType, Nullable<UnitModel>>>(this._currentUnits);
+    __getCtorByType(type: UniverInstanceType): UnitCtor | undefined {
+        return this._ctorByType.get(type);
+    }
+
+    private _currentUnits = new Map<UniverInstanceType, Nullable<UnitModel>>();
+    private readonly _currentUnits$ = new BehaviorSubject<Map<UniverInstanceType, Nullable<UnitModel>>>(this._currentUnits);
     readonly currentUnits$ = this._currentUnits$.asObservable();
     getCurrentTypeOfUnit$<T>(type: number): Observable<Nullable<T>> {
         return this.currentUnits$.pipe(map((units) => units.get(type) ?? null), distinctUntilChanged()) as Observable<Nullable<T>>;
     }
 
-    getCurrentUnitForType<T extends UnitModel>(type: UnitType): Nullable<T> {
+    getCurrentUnitOfType<T extends UnitModel>(type: UniverInstanceType): Nullable<T> {
         return this._currentUnits.get(type) as Nullable<T>;
-    }
-
-    getCurrentUnitOfType<T extends UnitModel>(type: UnitType): Nullable<T> {
-        return this.getCurrentUnitForType(type);
     }
 
     setCurrentUnitForType(unitId: string): void {
         const result = this._getUnitById(unitId);
         if (!result) throw new Error(`[UniverInstanceService]: no document with unitId ${unitId}!`);
+        if (this._currentUnits.get(result[1]) === result[0]) {
+            return;
+        }
 
         this._currentUnits.set(result[1], result[0]);
         this._currentUnits$.next(this._currentUnits);
     }
 
-    private readonly _unitAdded$ = new Subject<UnitModel>();
+    private readonly _unitAdded$ = new Subject<ICreateUnitEvent>();
     readonly unitAdded$ = this._unitAdded$.asObservable();
-    getTypeOfUnitAdded$<T extends UnitModel<object, number>>(type: UnitType): Observable<T> {
-        return this._unitAdded$.pipe(filter((unit) => unit.type === type)) as Observable<T>;
+    getTypeOfUnitAdded$<T extends UnitModel<object, number>>(type: UniverInstanceType): Observable<ICreateUnitEvent<T>> {
+        return this._unitAdded$.pipe(filter((event) => event.unit.type === type)) as Observable<ICreateUnitEvent<T>>;
     }
 
     /**
@@ -204,7 +225,10 @@ export class UniverInstanceService extends Disposable implements IUniverInstance
         }
 
         units.push(unit);
-        this._unitAdded$.next(unit);
+        if (options) {
+            this._unitCreateOptions.set(newUnitId, { ...options });
+        }
+        this._unitAdded$.next({ unit, options });
 
         if (options?.makeCurrent ?? true) {
             this.setCurrentUnitForType(unit.getUnitId());
@@ -217,38 +241,18 @@ export class UniverInstanceService extends Disposable implements IUniverInstance
         return this.unitDisposed$.pipe(filter((unit) => unit.type === type)) as Observable<T>;
     }
 
-    getUnit<T extends UnitModel = UnitModel>(id: string, type?: UnitType): Nullable<T> {
+    getUnit<T extends UnitModel = UnitModel>(id: string, type?: UniverInstanceType): Nullable<T> {
         const unit = this._getUnitById(id)?.[0] as Nullable<T>;
         if (type && unit?.type !== type) return null;
         return unit;
     }
 
-    getCurrentUniverDocInstance(): Nullable<DocumentDataModel> {
-        return this.getCurrentUnitForType(UniverInstanceType.UNIVER_DOC) as Nullable<DocumentDataModel>;
+    getUnitCreateOptions(unitId: string): Nullable<ICreateUnitOptions> {
+        return this._unitCreateOptions.get(unitId) ?? null;
     }
 
-    getUniverDocInstance(unitId: string): Nullable<DocumentDataModel> {
-        return this.getUnit<DocumentDataModel>(unitId, UniverInstanceType.UNIVER_DOC);
-    }
-
-    getUniverSheetInstance(unitId: string): Nullable<Workbook> {
-        return this.getUnit<Workbook>(unitId, UniverInstanceType.UNIVER_SHEET);
-    }
-
-    getAllUnitsForType<T>(type: UnitType): T[] {
+    getAllUnitsForType<T>(type: UniverInstanceType): T[] {
         return (this._unitsByType.get(type) ?? []) as T[];
-    }
-
-    changeDoc(unitId: string, doc: DocumentDataModel): void {
-        const allDocs = this.getAllUnitsForType<DocumentDataModel>(UniverInstanceType.UNIVER_DOC);
-        const oldDoc = allDocs.find((doc) => doc.getUnitId() === unitId);
-
-        if (oldDoc != null) {
-            const index = allDocs.indexOf(oldDoc);
-            allDocs.splice(index, 1);
-        }
-
-        this.__addUnit(doc);
     }
 
     private readonly _focused$ = new BehaviorSubject<Nullable<string>>(null);
@@ -261,6 +265,10 @@ export class UniverInstanceService extends Disposable implements IUniverInstance
     }
 
     focusUnit(id: string | null): void {
+        if (this._focused$.getValue() === id) {
+            return;
+        }
+
         this._focused$.next(id);
 
         if (this.focused instanceof Workbook) {
@@ -268,24 +276,35 @@ export class UniverInstanceService extends Disposable implements IUniverInstance
             this._contextService.setContextValue(FOCUSING_DOC, false);
             this._contextService.setContextValue(FOCUSING_SHEET, true);
             this._contextService.setContextValue(FOCUSING_SLIDE, false);
+            this._contextService.setContextValue(FOCUSING_BOARD, false);
             this.setCurrentUnitForType(id!);
         } else if (this.focused instanceof DocumentDataModel) {
             this._contextService.setContextValue(FOCUSING_UNIT, true);
             this._contextService.setContextValue(FOCUSING_DOC, true);
             this._contextService.setContextValue(FOCUSING_SHEET, false);
             this._contextService.setContextValue(FOCUSING_SLIDE, false);
+            this._contextService.setContextValue(FOCUSING_BOARD, false);
             this.setCurrentUnitForType(id!);
-        } else if (this.focused instanceof SlideDataModel) {
+        } else if (this.focused?.type === UniverInstanceType.UNIVER_SLIDE) {
             this._contextService.setContextValue(FOCUSING_UNIT, true);
             this._contextService.setContextValue(FOCUSING_DOC, false);
             this._contextService.setContextValue(FOCUSING_SHEET, false);
             this._contextService.setContextValue(FOCUSING_SLIDE, true);
+            this._contextService.setContextValue(FOCUSING_BOARD, false);
+            this.setCurrentUnitForType(id!);
+        } else if (this.focused?.type === UniverInstanceType.UNIVER_BOARD) {
+            this._contextService.setContextValue(FOCUSING_UNIT, true);
+            this._contextService.setContextValue(FOCUSING_DOC, false);
+            this._contextService.setContextValue(FOCUSING_SHEET, false);
+            this._contextService.setContextValue(FOCUSING_SLIDE, false);
+            this._contextService.setContextValue(FOCUSING_BOARD, true);
             this.setCurrentUnitForType(id!);
         } else {
             this._contextService.setContextValue(FOCUSING_UNIT, false);
             this._contextService.setContextValue(FOCUSING_DOC, false);
             this._contextService.setContextValue(FOCUSING_SHEET, false);
             this._contextService.setContextValue(FOCUSING_SLIDE, false);
+            this._contextService.setContextValue(FOCUSING_BOARD, false);
         }
     }
 
@@ -318,14 +337,15 @@ export class UniverInstanceService extends Disposable implements IUniverInstance
         this._tryResetFocusOnRemoval(unitId);
 
         this._unitDisposed$.next(unit);
+        this._unitCreateOptions.delete(unitId);
 
         unit.dispose();
 
         return true;
     }
 
-    private _tryResetCurrentOnRemoval(unitId: string, type: UnitType): void {
-        const current = this.getCurrentUnitForType(type);
+    private _tryResetCurrentOnRemoval(unitId: string, type: UniverInstanceType): void {
+        const current = this.getCurrentUnitOfType(type);
         if (current?.getUnitId() === unitId) {
             this._currentUnits.set(type, null);
             this._currentUnits$.next(this._currentUnits);
@@ -338,7 +358,7 @@ export class UniverInstanceService extends Disposable implements IUniverInstance
         }
     };
 
-    private _getUnitById(unitId: string): Nullable<[UnitModel, UnitType]> {
+    private _getUnitById(unitId: string): Nullable<[UnitModel, UniverInstanceType]> {
         for (const [type, units] of this._unitsByType) {
             const unit = units.find((unit) => unit.getUnitId() === unitId);
             if (unit) {

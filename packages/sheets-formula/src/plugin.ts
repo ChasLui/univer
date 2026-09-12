@@ -15,35 +15,55 @@
  */
 
 import type { Dependency } from '@univerjs/core';
-import type { IUniverSheetsFormulaBaseConfig, IUniverSheetsFormulaRemoteConfig } from './controllers/config.schema';
-import { DependentOn, IConfigService, Inject, Injector, isNodeEnv, merge, Plugin, touchDependencies, UniverInstanceType } from '@univerjs/core';
-import { UniverFormulaEnginePlugin } from '@univerjs/engine-formula';
+import type { IUniverSheetsFormulaBaseConfig, IUniverSheetsFormulaRemoteConfig } from './config/config';
+import {
+    DependentOn,
+    IConfigService,
+    Inject,
+    Injector,
+    isNodeEnv,
+    merge,
+    Plugin,
+    touchDependencies,
+    UniverInstanceType,
+} from '@univerjs/core';
+import { IDescriptionService, UniverFormulaEnginePlugin } from '@univerjs/engine-formula';
 import { fromModule, IRPCChannelService, toModule } from '@univerjs/rpc';
 import { UniverSheetsPlugin } from '@univerjs/sheets';
+import pkg from '../package.json';
 import { SHEETS_FORMULA_PLUGIN_NAME } from './common/plugin-name';
-import { ActiveDirtyController } from './controllers/active-dirty.controller';
-import { ArrayFormulaCellInterceptorController } from './controllers/array-formula-cell-interceptor.controller';
 import {
     defaultPluginBaseConfig,
     defaultPluginRemoteConfig,
     PLUGIN_CONFIG_KEY_BASE,
     PLUGIN_CONFIG_KEY_REMOTE,
-} from './controllers/config.schema';
+} from './config/config';
+import { ActiveDirtyController } from './controllers/active-dirty.controller';
+import { ArrayFormulaCellInterceptorController } from './controllers/array-formula-cell-interceptor.controller';
 import { DefinedNameController } from './controllers/defined-name.controller';
+import { FormulaAutoFillController } from './controllers/formula-auto-fill.controller';
 import { FormulaController } from './controllers/formula.controller';
 import { ImageFormulaCellInterceptorController } from './controllers/image-formula-cell-interceptor.controller';
+import {
+    SheetFormulaCalculationResultApplyController,
+} from './controllers/sheet-formula-calculation-result-apply.controller';
 import { SuperTableController } from './controllers/super-table.controller';
 import { TriggerCalculationController } from './controllers/trigger-calculation.controller';
+import { UnitQualifierRenameController } from './controllers/unit-qualifier-rename.controller';
 import { UpdateDefinedNameController } from './controllers/update-defined-name.controller';
 import { UpdateFormulaController } from './controllers/update-formula.controller';
-import { DescriptionService, IDescriptionService } from './services/description.service';
 import { FormulaRefRangeService } from './services/formula-ref-range.service';
-import { IRegisterFunctionService, RegisterFunctionService } from './services/register-function.service';
-import { IRemoteRegisterFunctionService, RemoteRegisterFunctionService, RemoteRegisterFunctionServiceName } from './services/remote/remote-register-function.service';
+import {
+    IRemoteRegisterFunctionService,
+    RemoteRegisterFunctionService,
+    RemoteRegisterFunctionServiceName,
+} from './services/remote/remote-register-function.service';
 
 @DependentOn(UniverFormulaEnginePlugin)
 export class UniverRemoteSheetsFormulaPlugin extends Plugin {
     static override pluginName = 'SHEET_FORMULA_REMOTE_PLUGIN';
+    static override packageName = pkg.name;
+    static override version = pkg.version;
     static override type = UniverInstanceType.UNIVER_SHEET;
 
     constructor(
@@ -71,9 +91,11 @@ export class UniverRemoteSheetsFormulaPlugin extends Plugin {
     }
 }
 
-@DependentOn(UniverSheetsPlugin)
+@DependentOn(UniverFormulaEnginePlugin, UniverSheetsPlugin)
 export class UniverSheetsFormulaPlugin extends Plugin {
     static override pluginName = SHEETS_FORMULA_PLUGIN_NAME;
+    static override packageName = pkg.name;
+    static override version = pkg.version;
     static override type = UniverInstanceType.UNIVER_SHEET;
 
     constructor(
@@ -95,8 +117,7 @@ export class UniverSheetsFormulaPlugin extends Plugin {
     override onStarting(): void {
         const j = this._injector;
         const dependencies: Dependency[] = [
-            [IRegisterFunctionService, { useClass: RegisterFunctionService }],
-            [IDescriptionService, { useClass: DescriptionService }],
+            [SheetFormulaCalculationResultApplyController],
             [FormulaController],
             [FormulaRefRangeService],
             [ArrayFormulaCellInterceptorController],
@@ -107,6 +128,8 @@ export class UniverSheetsFormulaPlugin extends Plugin {
             [DefinedNameController],
             [UpdateDefinedNameController],
             [SuperTableController],
+            [FormulaAutoFillController],
+            [UnitQualifierRenameController],
         ];
 
         // If the plugin do not execute formula, it should delegate a remote proxy.
@@ -119,6 +142,10 @@ export class UniverSheetsFormulaPlugin extends Plugin {
         }
 
         dependencies.forEach((dependency) => j.add(dependency));
+
+        if (this._config.description?.length) {
+            this.disposeWithMe(j.get(IDescriptionService).registerDescriptions(this._config.description));
+        }
     }
 
     override onReady(): void {
@@ -129,6 +156,9 @@ export class UniverSheetsFormulaPlugin extends Plugin {
             [ImageFormulaCellInterceptorController],
             [UpdateFormulaController],
             [UpdateDefinedNameController],
+            [FormulaAutoFillController],
+            [UnitQualifierRenameController],
+            [SheetFormulaCalculationResultApplyController],
         ]);
 
         // There is no rendering in the nodejs environment, so initialize it here

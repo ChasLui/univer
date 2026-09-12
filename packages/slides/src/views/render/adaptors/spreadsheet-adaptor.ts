@@ -14,9 +14,10 @@
  * limitations under the License.
  */
 
-import type { EventState, IPageElement } from '@univerjs/core';
+import type { EventState } from '@univerjs/core';
 import type { IScrollObserverParam, IWheelEvent } from '@univerjs/engine-render';
-import { IConfigService, IContextService, Inject, Injector, LocaleService, PageElementType, Styles, Worksheet } from '@univerjs/core';
+import type { IPageElement } from '../../../types/interfaces/i-slide-data';
+import { IConfigService, IContextService, Inject, Injector, LocaleService, Styles, Worksheet } from '@univerjs/core';
 import {
     getColor,
     Rect,
@@ -29,7 +30,7 @@ import {
     SpreadsheetSkeleton,
     Viewport,
 } from '@univerjs/engine-render';
-
+import { PageElementType } from '../../../types/interfaces/i-slide-data';
 import { CanvasObjectProviderRegistry, ObjectAdaptor } from '../adaptor';
 
 enum SHEET_VIEW_KEY {
@@ -123,9 +124,10 @@ export class SpreadsheetAdaptor extends ObjectAdaptor {
             width: allWidth,
             height: allHeight,
         });
+        spreadsheetSkeleton.setScene(scene);
+        scene.disposeWithMe(spreadsheetSkeleton);
 
         this._updateViewport(id, rowHeaderWidth, columnHeaderHeight, scene, mainScene);
-
         const spreadsheet = new Spreadsheet('testSheetViewer', spreadsheetSkeleton, false);
         const spreadsheetRowHeader = new SpreadsheetRowHeader(SHEET_VIEW_KEY.ROW, spreadsheetSkeleton);
         const spreadsheetColumnHeader = new SpreadsheetColumnHeader(SHEET_VIEW_KEY.COLUMN, spreadsheetSkeleton);
@@ -143,11 +145,9 @@ export class SpreadsheetAdaptor extends ObjectAdaptor {
         spreadsheet.zIndex = 10;
         scene.addObjects([spreadsheet], 1);
         scene.addObjects([spreadsheetRowHeader, spreadsheetColumnHeader, SpreadsheetLeftTopPlaceholder], 2);
-        // spreadsheet.enableSelection();
         return sv;
     }
 
-    // eslint-disable-next-line max-lines-per-function
     private _updateViewport(
         id: string,
         rowHeaderWidth: number,
@@ -187,15 +187,13 @@ export class SpreadsheetAdaptor extends ObjectAdaptor {
             isWheelPreventDefaultX: true,
         });
 
-        const VIEW_LEFT_TOP = new Viewport(SHEET_VIEW_KEY.VIEW_LEFT_TOP + id, scene, {
+        const _viewLeftTop = new Viewport(SHEET_VIEW_KEY.VIEW_LEFT_TOP + id, scene, {
             left: 0,
             top: 0,
             width: rowHeaderWidthScale,
             height: columnHeaderHeightScale,
             isWheelPreventDefaultX: true,
         });
-        // viewMain.linkToViewport(viewLeft, LINK_VIEW_PORT_TYPE.Y);
-        // viewMain.linkToViewport(viewTop, LINK_VIEW_PORT_TYPE.X);
         viewMain.onScrollAfter$.subscribeEvent((param: IScrollObserverParam) => {
             const { scrollX, scrollY, viewportScrollX, viewportScrollY } = param;
 
@@ -213,12 +211,13 @@ export class SpreadsheetAdaptor extends ObjectAdaptor {
         });
 
         scene.attachControl();
-
-        const scrollbar = new ScrollBar(viewMain, {
+        const _scrollbar = new ScrollBar(viewMain, {
             mainScene,
         });
+        this._bindWheel(scene, viewMain);
+    }
 
-        // 鼠标滚轮缩放
+    private _bindWheel(scene: Scene, viewMain: Viewport): void {
         scene.onMouseWheel$.subscribeEvent((evt: unknown, state: EventState) => {
             const e = evt as IWheelEvent;
             if (e.ctrlKey) {

@@ -19,6 +19,13 @@ export enum MenuManagerPosition {
     CONTEXT_MENU = 'contextMenu',
 }
 
+export enum FloatingObjectToolbarPosition {
+    SHEET = 'floatingObjectToolbar.sheet',
+    DOC = 'floatingObjectToolbar.doc',
+    SLIDE = 'floatingObjectToolbar.slide',
+    BOARD = 'floatingObjectToolbar.board',
+}
+
 export enum RibbonPosition {
     START = 'ribbon.start', // RibbonStartGroup
     INSERT = 'ribbon.insert', // RibbonInsertGroup
@@ -32,11 +39,13 @@ export enum RibbonStartGroup {
     HISTORY = 'ribbon.start.history',
     FORMAT = 'ribbon.start.format',
     LAYOUT = 'ribbon.start.layout',
+    NUMBER = 'ribbon.start.number',
     OTHERS = 'ribbon.start.others',
 }
 
 export enum RibbonInsertGroup {
     EDIT = 'ribbon.insert.edit',
+    CELL = 'ribbon.insert.cell',
     MEDIA = 'ribbon.insert.media',
     OTHERS = 'ribbon.insert.others',
 }
@@ -73,6 +82,10 @@ export enum ContextMenuPosition {
      * paragraph context menu in doc
      */
     PARAGRAPH = 'contextMenu.paragraph',
+    /**
+     * drawing context menu, now only used in drawing group operation
+     */
+    DRAWING = 'contextMenu.drawing',
 }
 
 export enum ContextMenuGroup {

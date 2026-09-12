@@ -14,8 +14,8 @@
  * limitations under the License.
  */
 
-import type { IKeyValue, Nullable } from '@univerjs/core';
-
+import type { Nullable } from '@univerjs/core';
+import type { DeviceType } from './basics/i-events';
 import type { IObjectFullState } from './basics/interfaces';
 import type { IViewportInfo, Vector2 } from './basics/vector2';
 import type { UniverRenderingContext } from './context';
@@ -124,15 +124,15 @@ export class SceneViewer extends BaseObject {
         return this._allowSelectedClipElement;
     }
 
-    // 判断被选中的唯一对象
-    pick(coord: Vector2) {
+    // Determine the uniquely selected object
+    pick(coord: Vector2, deviceType?: DeviceType) {
         if (this._activeSubScene === undefined) {
             return;
         }
 
         const tCoord = this.transform.invert().applyPoint(coord);
 
-        return this._activeSubScene?.pick(tCoord);
+        return this._activeSubScene?.pick(tCoord, deviceType);
     }
 
     override dispose() {
@@ -160,7 +160,7 @@ export class SceneViewer extends BaseObject {
                 return true;
             }
 
-            (transformState as IKeyValue)[key] = props[key as keyof IObjectFullState];
+            (transformState as Record<string, any>)[key] = props[key as keyof IObjectFullState];
             hasTransformState = true;
         });
 

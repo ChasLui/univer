@@ -14,19 +14,26 @@
  * limitations under the License.
  */
 
-import { cellToRange, isPatternEqualWithoutDecimal } from '@univerjs/core';
+import { cellToRange, CellValueType, currencySymbols, DEFAULT_NUMBER_FORMAT, DEFAULT_TEXT_FORMAT_EXCEL, isPatternEqualWithoutDecimal, LocaleType } from '@univerjs/core';
 import { RemoveNumfmtMutation, SetNumfmtMutation } from '@univerjs/sheets';
-import { describe, expect, it } from 'vitest';
-import { currencySymbols } from '../base/const/currency-symbols';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { getCurrencyFormat, getCurrencySymbolByLocale, getCurrencySymbolIconByLocale } from '../base/const/currency-symbols';
 import { getCurrencyType } from '../utils/currency';
-import { getDecimalFromPattern, getDecimalString, setPatternDecimal } from '../utils/decimal';
+import { getDecimalFromPattern, getDecimalString, isPatternHasDecimal, setPatternDecimal } from '../utils/decimal';
 import { mergeNumfmtMutations } from '../utils/mutation';
+import { getCurrencyFormatOptions, getCurrencyOptions, getDateFormatOptions, getNumberFormatOptions } from '../utils/options';
+import { getPatternPreview, getPatternPreviewIgnoreGeneral, getPatternType } from '../utils/pattern';
+import { getScientificNotationFormatFromCell, isAllowedPatternForScientificNotationNumber, isScientificNotationNumericCell } from '../utils/scientific-notation';
 
 describe('test numfmt utils function', () => {
+    afterEach(() => {
+        vi.restoreAllMocks();
+    });
+
     it('getCurrencyType', () => {
-        expect(getCurrencyType(`_(${currencySymbols[3]} 123123`)).toBe(currencySymbols[3]);
+        expect(getCurrencyType(`_(${currencySymbols[7]} 123123`)).toBe(currencySymbols[7]);
         expect(getCurrencyType('_(# 123123')).toBeUndefined();
-        expect(getCurrencyType(`_(${currencySymbols[3]} 123123 ${currencySymbols[4]}`)).toBe(currencySymbols[3]);
+        expect(getCurrencyType(`_(${currencySymbols[7]} 123123 ${currencySymbols[8]}`)).toBe(currencySymbols[7]);
     });
     it('getDecimalFromPattern', () => {
         expect(getDecimalFromPattern('_(###0.000);--###0.00')).toBe(3);
@@ -50,6 +57,89 @@ describe('test numfmt utils function', () => {
         expect(setPatternDecimal('.', 4)).toBe('.0000'); // the positive color ignored
         expect(setPatternDecimal('0.0', 4)).toBe('0.0000'); // the positive color ignored
         expect(setPatternDecimal('0.0', 0)).toBe('0'); // the positive color ignored
+    });
+
+    it('isPatternHasDecimal', () => {
+        expect(isPatternHasDecimal('0.00')).toBe(true);
+        expect(isPatternHasDecimal('#,##0')).toBe(true);
+        expect(isPatternHasDecimal('General')).toBe(false);
+    });
+
+    it('currency symbol helpers', () => {
+        expect(getCurrencySymbolByLocale(LocaleType.ZH_CN)).toBe('¥');
+        expect(getCurrencySymbolByLocale(LocaleType.KO_KR)).toBe('₩');
+        expect(getCurrencySymbolIconByLocale(LocaleType.FR_FR)).toEqual({
+            icon: 'EuroIcon',
+            symbol: '€',
+            locale: LocaleType.FR_FR,
+        });
+        expect(getCurrencySymbolIconByLocale(LocaleType.KO_KR)).toEqual({
+            icon: 'WonIcon',
+            symbol: '₩',
+            locale: LocaleType.KO_KR,
+        });
+        expect([
+            LocaleType.VI_VN,
+            LocaleType.FA_IR,
+            LocaleType.AR_SA,
+            LocaleType.ID_ID,
+            LocaleType.PL_PL,
+        ].map((locale) => getCurrencySymbolIconByLocale(locale).icon)).toEqual([
+            'DongIcon',
+            'RialIcon',
+            'RialIcon',
+            'RupiahIcon',
+            'ZlotyIcon',
+        ]);
+        expect(getCurrencyFormat(LocaleType.ZH_CN, 3)).toContain('"¥"#,##0.000');
+        expect(getCurrencyFormat(LocaleType.EN_US, 200)).toContain(`.${'0'.repeat(127)}`);
+    });
+
+    it('option helpers expose formatted labels and values', () => {
+        expect(getCurrencyOptions()[0]).toEqual({ label: 'Rp', value: 'Rp' });
+        expect(getCurrencyFormatOptions('€')[0]).toMatchObject({
+            label: expect.stringContaining('€'),
+            value: expect.stringContaining('€'),
+        });
+        expect(getDateFormatOptions()[0]).toMatchObject({
+            label: expect.any(String),
+            value: expect.any(String),
+        });
+        expect(getNumberFormatOptions()[0]).toMatchObject({
+            label: expect.any(String),
+            value: expect.any(String),
+        });
+    });
+
+    it('pattern preview helpers return types and gracefully handle general or invalid formats', () => {
+        vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+        expect(getPatternType('0%')).toBe('percent');
+        expect(getPatternPreview('0.00', 12.3)).toEqual({ result: '12.30' });
+        expect(getPatternPreviewIgnoreGeneral(DEFAULT_NUMBER_FORMAT, 0.1 + 0.2)).toEqual({ result: '0.3' });
+        expect(getPatternPreview('[invalid', 42)).toEqual({ result: '42' });
+    });
+
+    it('scientific notation helpers detect numeric cells and derive display patterns from mantissa decimals', () => {
+        expect(isScientificNotationNumericCell({ v: 1e21, t: CellValueType.NUMBER })).toBe(true);
+        expect(isScientificNotationNumericCell({ v: 1.2345e31, t: CellValueType.NUMBER })).toBe(true);
+        expect(isScientificNotationNumericCell({ v: '1e21', t: CellValueType.STRING })).toBe(false);
+        expect(isScientificNotationNumericCell({ v: 123, t: CellValueType.NUMBER })).toBe(false);
+        expect(isScientificNotationNumericCell(null)).toBe(false);
+
+        expect(getScientificNotationFormatFromCell({ v: 1e21, t: CellValueType.NUMBER })).toBe('0.00E+00');
+        expect(getScientificNotationFormatFromCell({ v: 1.2e21, t: CellValueType.NUMBER })).toBe('0.00E+00');
+        expect(getScientificNotationFormatFromCell({ v: 1.2345e31, t: CellValueType.NUMBER })).toBe('0.0000E+00');
+        expect(getScientificNotationFormatFromCell({ v: -1.2345e-31, t: CellValueType.NUMBER })).toBe('0.0000E+00');
+    });
+
+    it('scientific notation format guard only allows general, text, and scientific patterns', () => {
+        expect(isAllowedPatternForScientificNotationNumber(undefined)).toBe(true);
+        expect(isAllowedPatternForScientificNotationNumber(DEFAULT_NUMBER_FORMAT)).toBe(true);
+        expect(isAllowedPatternForScientificNotationNumber(DEFAULT_TEXT_FORMAT_EXCEL)).toBe(true);
+        expect(isAllowedPatternForScientificNotationNumber('0.00E+00')).toBe(true);
+        expect(isAllowedPatternForScientificNotationNumber('0.00')).toBe(false);
+        expect(isAllowedPatternForScientificNotationNumber('0%')).toBe(false);
     });
 
     it('mergeNumfmtMutations', () => {
@@ -80,9 +170,12 @@ describe('test numfmt utils function', () => {
             },
         ]);
 
+        const removeMutation = result[0] as { params: { ranges: unknown } };
+        const setMutation = result[1] as { params: { values: Record<string, { ranges: unknown }> } };
+
         expect(result[0].id === RemoveNumfmtMutation.id).toBeTruthy();
         expect(result[1].id === SetNumfmtMutation.id).toBeTruthy();
-        expect((result as any)[0].params.ranges).toEqual([
+        expect(removeMutation.params.ranges).toEqual([
             {
                 startRow: 2,
                 endRow: 2,
@@ -96,7 +189,7 @@ describe('test numfmt utils function', () => {
                 endColumn: 5,
             },
         ]);
-        expect((result as any)[1].params.values['1'].ranges).toEqual([
+        expect(setMutation.params.values['1'].ranges).toEqual([
             {
                 startRow: 2,
                 endRow: 2,

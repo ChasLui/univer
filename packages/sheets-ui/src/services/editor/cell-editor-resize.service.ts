@@ -16,17 +16,31 @@
 
 import type { DocumentDataModel, IPosition, Nullable } from '@univerjs/core';
 import type { DocumentSkeleton, IDocumentLayoutObject, Scene } from '@univerjs/engine-render';
-import type { IUniverUIConfig } from '@univerjs/ui';
-import type { IUniverSheetsUIConfig } from '../../controllers/config.schema';
-import { Disposable, DOCS_NORMAL_EDITOR_UNIT_ID_KEY, HorizontalAlign, IConfigService, IUniverInstanceService, UniverInstanceType, VerticalAlign, WrapStrategy } from '@univerjs/core';
+import {
+    Disposable,
+    DOCS_NORMAL_EDITOR_UNIT_ID_KEY,
+    HorizontalAlign,
+    IConfigService,
+    IUniverInstanceService,
+    Optional,
+    UniverInstanceType,
+    VerticalAlign,
+    WrapStrategy,
+} from '@univerjs/core';
 import { DocSkeletonManagerService } from '@univerjs/docs';
 import { DOCS_COMPONENT_MAIN_LAYER_INDEX, VIEWPORT_KEY } from '@univerjs/docs-ui';
-import { convertTextRotation, fixLineWidthByScale, getCurrentTypeOfRenderer, IRenderManagerService, Rect, ScrollBar } from '@univerjs/engine-render';
-import { ILayoutService, UI_PLUGIN_CONFIG_KEY } from '@univerjs/ui';
+import {
+    convertTextRotation,
+    fixLineWidthByScale,
+    getCurrentTypeOfRenderer,
+    IRenderManagerService,
+    Rect,
+    ScrollBar,
+} from '@univerjs/engine-render';
+import { ILayoutService } from '@univerjs/ui';
 import { getEditorObject } from '../../basics/editor/get-editor-object';
-import { SHEETS_UI_PLUGIN_CONFIG_KEY } from '../../controllers/config.schema';
-import { SHEET_FOOTER_BAR_HEIGHT } from '../../views/sheet-container/SheetContainer';
 import { IEditorBridgeService } from '../editor-bridge.service';
+import { ISheetEmbedFloatingGeometryService } from '../sheet-embed-integration.service';
 import { SheetSkeletonManagerService } from '../sheet-skeleton-manager.service';
 import { ICellEditorManagerService } from './cell-editor-manager.service';
 
@@ -46,7 +60,8 @@ export class SheetCellEditorResizeService extends Disposable {
         @IEditorBridgeService private readonly _editorBridgeService: IEditorBridgeService,
         @IRenderManagerService private readonly _renderManagerService: IRenderManagerService,
         @IUniverInstanceService private readonly _univerInstanceService: IUniverInstanceService,
-        @IConfigService private readonly _configService: IConfigService
+        @IConfigService private readonly _configService: IConfigService,
+        @Optional(ISheetEmbedFloatingGeometryService) private readonly _embedFloatingGeometryService?: ISheetEmbedFloatingGeometryService
     ) {
         super();
     }
@@ -60,12 +75,11 @@ export class SheetCellEditorResizeService extends Disposable {
     }
 
     private get _editingRenderer() {
-        return this._renderManagerService.getRenderById(this._editingUnitId);
+        return this._renderManagerService.getRenderUnitById(this._editingUnitId);
     }
 
     private get _renderer() {
-        const currentUnitId = this._univerInstanceService.getCurrentUnitOfType(UniverInstanceType.UNIVER_SHEET)?.getUnitId();
-        return this._editingUnitId === currentUnitId ? this._editingRenderer : this._currentRenderer;
+        return this._editingRenderer ?? this._currentRenderer;
     }
 
     private get _sheetSkeletonManagerService() {
@@ -90,6 +104,9 @@ export class SheetCellEditorResizeService extends Disposable {
 
         const documentSkeleton = this._getEditorSkeleton();
         if (!documentSkeleton) return;
+        // Cell editors are embedded docs with unspecified compatibility mode. Reset before
+        // measuring so stale page width from a previous resize does not leak into this editor.
+        documentSkeleton.resetInitialWidth();
 
         const info = this._predictingSize(
             position,
@@ -222,8 +239,8 @@ export class SheetCellEditorResizeService extends Disposable {
         if (editorObject == null) {
             return;
         }
-        function pxToNum(width: string): number {
-            return Number.parseInt(width.replace('px', ''));
+        function pxToNum(size: string | undefined): number {
+            return Number.parseFloat(size?.replace('px', '') ?? '');
         }
 
         const engine = this.engine;
@@ -233,40 +250,40 @@ export class SheetCellEditorResizeService extends Disposable {
 
         // We should take the scale into account when canvas is scaled by CSS.
         const widthOfCanvas = pxToNum(canvasElement.style.width); // declared width
-        const { width } = canvasClientRect; // real width affected by scale
-        const scaleAdjust = width / widthOfCanvas;
+        const heightOfCanvas = pxToNum(canvasElement.style.height); // declared height
+        const { width, height } = canvasClientRect; // real width affected by scale
+        const contentElement = this._getEditorContentElement();
+        const contentBoundingRect = contentElement.getBoundingClientRect();
+        const contentScaleX = resolveElementScale(contentBoundingRect.width, contentElement.offsetWidth);
+        const contentScaleY = resolveElementScale(contentBoundingRect.height, contentElement.offsetHeight, contentScaleX);
+        const scaleAdjustX = width / widthOfCanvas / contentScaleX;
+        const scaleAdjustY = Number.isFinite(heightOfCanvas) && heightOfCanvas > 0
+            ? height / heightOfCanvas / contentScaleY
+            : scaleAdjustX;
         const { startX, startY, endX } = position;
         const enginWidth = engine.width;
 
-        const footerBarHeight = (
-            (this._configService.getConfig<IUniverUIConfig>(UI_PLUGIN_CONFIG_KEY)?.footer ?? true)
-            &&
-            (this._configService.getConfig<IUniverSheetsUIConfig>(SHEETS_UI_PLUGIN_CONFIG_KEY)?.footer ?? true)
-        )
-            ? SHEET_FOOTER_BAR_HEIGHT
-            : 0;
+        const maxHeight = height / contentScaleY - startY - EDITOR_BORDER_SIZE * 2;
 
-        const clientHeight =
-            document.body.clientHeight -
-            startY -
-            footerBarHeight -
-            canvasOffset.top -
-            EDITOR_BORDER_SIZE * 2;
-
-        let clientWidth = width - startX;
-
+        const cellWidth = endX - startX;
+        let maxWidth = width / contentScaleX - startX;
         if (horizontalAlign === HorizontalAlign.CENTER) {
             const rightGap = enginWidth - endX;
             const leftGap = startX;
-            clientWidth = (endX - startX) + Math.min(leftGap, rightGap) * 2;
+            maxWidth = cellWidth + Math.min(leftGap, rightGap) * 2;
         } else if (horizontalAlign === HorizontalAlign.RIGHT) {
-            clientWidth = endX;
+            maxWidth = endX;
         }
+        maxWidth = maxWidth - EDITOR_BORDER_SIZE * 2;
+        maxWidth = Math.max(maxWidth, cellWidth);
 
         return {
-            height: clientHeight,
-            width: clientWidth - EDITOR_BORDER_SIZE,
-            scaleAdjust,
+            height: maxHeight,
+            width: maxWidth,
+            contentScaleX,
+            contentScaleY,
+            scaleAdjustX,
+            scaleAdjustY,
         };
     }
 
@@ -304,7 +321,7 @@ export class SheetCellEditorResizeService extends Disposable {
 
         const info = this._getEditorMaxSize(actualRangeWithCoord, canvasOffset, horizontalAlign)!;
 
-        const { height: clientHeight, width: clientWidth, scaleAdjust } = info;
+        const { height: clientHeight, width: clientWidth, contentScaleX, contentScaleY, scaleAdjustX, scaleAdjustY } = info;
 
         let physicHeight = editorHeight;
 
@@ -337,13 +354,13 @@ export class SheetCellEditorResizeService extends Disposable {
         const { scaleX: precisionScaleX, scaleY: precisionScaleY } = editorScene.getPrecisionScale();
 
         editorScene.transformByState({
-            width: editorWidth * scaleAdjust / scaleX,
-            height: editorHeight * scaleAdjust / scaleY,
-            scaleX: scaleX * scaleAdjust,
-            scaleY: scaleY * scaleAdjust,
+            width: editorWidth * scaleAdjustX / scaleX,
+            height: editorHeight * scaleAdjustY / scaleY,
+            scaleX: scaleX * scaleAdjustX,
+            scaleY: scaleY * scaleAdjustY,
         });
 
-        documentComponent.resize(editorWidth * scaleAdjust / scaleX, editorHeight * scaleAdjust / scaleY);
+        documentComponent.resize(editorWidth * scaleAdjustX / scaleX, editorHeight * scaleAdjustY / scaleY);
 
         /**
          * sometimes requestIdleCallback is invalid, so use setTimeout to ensure the successful execution of the resizeBySize method.
@@ -359,26 +376,32 @@ export class SheetCellEditorResizeService extends Disposable {
             callback?.();
         }, 0);
 
-        const contentBoundingRect = this._layoutService.getContentElement().getBoundingClientRect();
+        const contentBoundingRect = this._getEditorContentElement().getBoundingClientRect();
         const canvasBoundingRect = canvasElement.getBoundingClientRect();
-        startX = startX * scaleAdjust + (canvasBoundingRect.left - contentBoundingRect.left);
-        startY = startY * scaleAdjust + (canvasBoundingRect.top - contentBoundingRect.top);
+        startX = startX * scaleAdjustX + (canvasBoundingRect.left - contentBoundingRect.left) / contentScaleX;
+        startY = startY * scaleAdjustY + (canvasBoundingRect.top - contentBoundingRect.top) / contentScaleY;
 
         const cellWidth = actualRangeWithCoord.endX - actualRangeWithCoord.startX;
         if (horizontalAlign === HorizontalAlign.RIGHT) {
-            startX += (cellWidth - editorWidth) * scaleAdjust;
+            startX += (cellWidth - editorWidth) * scaleAdjustX;
         } else if (horizontalAlign === HorizontalAlign.CENTER) {
-            startX += (cellWidth - editorWidth * scaleAdjust) / 2;
+            startX += (cellWidth - editorWidth * scaleAdjustX) / 2;
         }
 
         // Update cell editor container position and size.
         this._cellEditorManagerService.setState({
             startX,
             startY,
-            endX: editorWidth * scaleAdjust + startX,
-            endY: physicHeight * scaleAdjust + startY,
+            endX: editorWidth * scaleAdjustX + startX,
+            endY: physicHeight * scaleAdjustY + startY,
             show: true,
         });
+    }
+
+    private _getEditorContentElement(): HTMLElement {
+        return this._embedFloatingGeometryService
+            ?.getRegistrationByChildUnitId(this._editingUnitId)
+            ?.contentRoot ?? this._layoutService.getContentElement();
     }
 
     /**
@@ -433,11 +456,11 @@ export class SheetCellEditorResizeService extends Disposable {
         const { horizontalAlign } = documentLayoutObject;
         const maxSize = this._getEditorMaxSize(position, canvasOffset, horizontalAlign);
         if (!maxSize) return;
-        const { height: clientHeight, width: clientWidth, scaleAdjust } = maxSize;
+        const { height: clientHeight, width: clientWidth, scaleAdjustX, scaleAdjustY } = maxSize;
 
         const cell = skeleton.getCellWithCoordByIndex(row, column);
-        const height = Math.min((cell.mergeInfo.endY - cell.mergeInfo.startY) * scaleY, clientHeight) * scaleAdjust;
-        const width = Math.min((cell.mergeInfo.endX - cell.mergeInfo.startX) * scaleX, clientWidth) * scaleAdjust;
+        const height = Math.min((cell.mergeInfo.endY - cell.mergeInfo.startY) * scaleY, clientHeight) * scaleAdjustY;
+        const width = Math.min((cell.mergeInfo.endX - cell.mergeInfo.startX) * scaleX, clientWidth) * scaleAdjustX;
         const currentHeight = state.endY! - state.startY!;
         const currentWidth = state.endX! - state.startX!;
 
@@ -457,6 +480,14 @@ export class SheetCellEditorResizeService extends Disposable {
     }
 
     private _getEditorSkeleton() {
-        return this._renderManagerService.getRenderById(DOCS_NORMAL_EDITOR_UNIT_ID_KEY)?.with(DocSkeletonManagerService).getSkeleton();
+        return this._renderManagerService.getRenderUnitById(DOCS_NORMAL_EDITOR_UNIT_ID_KEY)?.with(DocSkeletonManagerService).getSkeleton();
     }
+}
+
+function resolveElementScale(renderedSize: number, layoutSize: number, fallback = 1): number {
+    if (!Number.isFinite(renderedSize) || !Number.isFinite(layoutSize) || renderedSize <= 0 || layoutSize <= 0) {
+        return fallback;
+    }
+
+    return renderedSize / layoutSize;
 }

@@ -15,29 +15,49 @@
  */
 
 import type { Dependency } from '@univerjs/core';
-import type { IUniverSheetsThreadCommentUIConfig } from './controllers/config.schema';
+import type { IUniverSheetsThreadCommentUIConfig } from './config/config';
 import { DependentOn, ICommandService, IConfigService, Inject, Injector, merge, Plugin, UniverInstanceType } from '@univerjs/core';
+import { UniverDrawingPlugin } from '@univerjs/drawing';
+import { IRenderManagerService, UniverRenderEnginePlugin } from '@univerjs/engine-render';
+import { UniverSheetsPlugin } from '@univerjs/sheets';
 import { UniverSheetsThreadCommentPlugin } from '@univerjs/sheets-thread-comment';
+import { UniverSheetsUIPlugin } from '@univerjs/sheets-ui';
+import { UniverThreadCommentPlugin } from '@univerjs/thread-comment';
 import { UniverThreadCommentUIPlugin } from '@univerjs/thread-comment-ui';
-import { ShowAddSheetCommentModalOperation } from './commands/operations/comment.operation';
-import { defaultPluginConfig, SHEETS_THREAD_COMMENT_UI_PLUGIN_CONFIG_KEY } from './controllers/config.schema';
+import pkg from '../package.json';
+import { AddSheetDrawingCommentOperation, OpenSheetCommentPanelOperation, ShowAddSheetCommentModalOperation, ToggleSheetCommentPanelOperation } from './commands/operations/comment.operation';
+import { defaultPluginConfig, SHEETS_THREAD_COMMENT_UI_PLUGIN_CONFIG_KEY } from './config/config';
+import { ComponentsController } from './controllers/components.controller';
+import { SheetsThreadCommentDrawingRenderController } from './controllers/render-controllers/drawing.render-controller';
 import { SheetsThreadCommentRenderController } from './controllers/render-controllers/render.controller';
 import { SheetsThreadCommentCopyPasteController } from './controllers/sheets-thread-comment-copy-paste.controller';
 import { SheetsThreadCommentHoverController } from './controllers/sheets-thread-comment-hover.controller';
+import { SheetsThreadCommentPermissionController } from './controllers/sheets-thread-comment-permission.controller';
 import { SheetsThreadCommentPopupController } from './controllers/sheets-thread-comment-popup.controller';
 import { SheetsThreadCommentController } from './controllers/sheets-thread-comment.controller';
 import { SheetsThreadCommentPopupService } from './services/sheets-thread-comment-popup.service';
-import { SHEETS_THREAD_COMMENT } from './types/const';
+import { PLUGIN_NAME } from './types/const';
 
-@DependentOn(UniverThreadCommentUIPlugin, UniverSheetsThreadCommentPlugin)
+@DependentOn(
+    UniverRenderEnginePlugin,
+    UniverThreadCommentPlugin,
+    UniverDrawingPlugin,
+    UniverSheetsPlugin,
+    UniverThreadCommentUIPlugin,
+    UniverSheetsThreadCommentPlugin,
+    UniverSheetsUIPlugin
+)
 export class UniverSheetsThreadCommentUIPlugin extends Plugin {
-    static override pluginName = SHEETS_THREAD_COMMENT;
+    static override pluginName = PLUGIN_NAME;
+    static override packageName = pkg.name;
+    static override version = pkg.version;
     static override type = UniverInstanceType.UNIVER_SHEET;
 
     constructor(
         private readonly _config: Partial<IUniverSheetsThreadCommentUIConfig> = defaultPluginConfig,
         @Inject(Injector) protected override _injector: Injector,
         @Inject(ICommandService) protected _commandService: ICommandService,
+        @IRenderManagerService private readonly _renderManagerService: IRenderManagerService,
         @IConfigService private readonly _configService: IConfigService
     ) {
         super();
@@ -55,6 +75,8 @@ export class UniverSheetsThreadCommentUIPlugin extends Plugin {
     }
 
     override onStarting(): void {
+        this._injector.add([ComponentsController]);
+        this._injector.get(ComponentsController);
         ([
             [SheetsThreadCommentController],
             [SheetsThreadCommentRenderController],
@@ -62,11 +84,17 @@ export class UniverSheetsThreadCommentUIPlugin extends Plugin {
             [SheetsThreadCommentHoverController],
             [SheetsThreadCommentPopupController],
             [SheetsThreadCommentPopupService],
+            [SheetsThreadCommentPermissionController],
         ] as Dependency[]).forEach((dep) => {
             this._injector.add(dep);
         });
 
-        [ShowAddSheetCommentModalOperation].forEach((command) => {
+        [
+            AddSheetDrawingCommentOperation,
+            OpenSheetCommentPanelOperation,
+            ShowAddSheetCommentModalOperation,
+            ToggleSheetCommentPanelOperation,
+        ].forEach((command) => {
             this._commandService.registerCommand(command);
         });
 
@@ -78,8 +106,13 @@ export class UniverSheetsThreadCommentUIPlugin extends Plugin {
     }
 
     override onRendered(): void {
+        this._renderManagerService.registerRenderModule(
+            UniverInstanceType.UNIVER_SHEET,
+            [SheetsThreadCommentDrawingRenderController]
+        );
         this._injector.get(SheetsThreadCommentCopyPasteController);
         this._injector.get(SheetsThreadCommentHoverController);
         this._injector.get(SheetsThreadCommentPopupController);
+        this._injector.get(SheetsThreadCommentPermissionController);
     }
 }

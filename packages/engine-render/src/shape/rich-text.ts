@@ -18,7 +18,6 @@ import type {
     IBorderData,
     IColorStyle,
     IDocumentData,
-    IKeyValue,
     IStyleBase,
     ITextDecoration,
     ITransformState,
@@ -26,7 +25,6 @@ import type {
     Nullable,
 } from '@univerjs/core';
 import type { BASE_OBJECT_ARRAY } from '../base-object';
-
 import type { IViewportInfo } from '../basics/vector2';
 import type { UniverRenderingContext } from '../context';
 import { BooleanNumber, DEFAULT_EMPTY_DOCUMENT_VALUE, DocumentDataModel } from '@univerjs/core';
@@ -271,7 +269,7 @@ export class RichText extends BaseObject {
     }
 
     override toJson(): RichtextObjectJSONType {
-        const props: IKeyValue = {};
+        const props: Record<string, any> = {};
         RICHTEXT_OBJECT_ARRAY.forEach((key) => {
             // @ts-ignore
             if (this[key]) {

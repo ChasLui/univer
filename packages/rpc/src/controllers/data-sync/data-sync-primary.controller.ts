@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import type { IDisposable, IMutation, IMutationInfo, Workbook } from '@univerjs/core';
+import type { BaseDataModel, IDisposable, IMutation, IMutationInfo, Workbook } from '@univerjs/core';
 import type { IRemoteSyncMutationOptions } from '../../services/remote-instance/remote-instance.service';
 import {
     CommandType,
@@ -49,6 +49,10 @@ export class DataSyncPrimaryController extends RxDisposable {
 
     private readonly _syncingMutations = new Set<string>();
 
+    private _syncMutationQueue: Promise<unknown> = Promise.resolve();
+
+    private _remoteReady: Promise<true> = Promise.resolve(true);
+
     constructor(
         @Inject(Injector) private readonly _injector: Injector,
         @ICommandService private readonly _commandService: ICommandService,
@@ -71,8 +75,52 @@ export class DataSyncPrimaryController extends RxDisposable {
      * sync other types of documents, you should manually call this method with that document's id.
      */
     syncUnit(unitId: string): IDisposable {
+        const alreadySyncing = this._syncingUnits.has(unitId);
         this._syncingUnits.add(unitId);
-        return toDisposable(() => this._syncingUnits.delete(unitId));
+        const unit = this._univerInstanceService.getUnit<Workbook>(unitId, UniverInstanceType.UNIVER_SHEET)
+            ?? this._univerInstanceService.getUnit<BaseDataModel>(unitId, UniverInstanceType.UNIVER_BASE);
+        if (!alreadySyncing && unit) {
+            this._remoteInstanceService.createInstance({
+                unitID: unit.getUnitId(),
+                type: unit.type,
+                snapshot: unit.getSnapshot(),
+            });
+        }
+
+        return toDisposable(() => {
+            if (!alreadySyncing) {
+                this._syncingUnits.delete(unitId);
+            }
+            if (!alreadySyncing && unit) {
+                this._remoteInstanceService.disposeInstance({
+                    unitID: unit.getUnitId(),
+                });
+            }
+        });
+    }
+
+    /** Sync registered mutations for a unit without creating a replica unit. */
+    syncUnitMutations(unitId: string): IDisposable {
+        const alreadySyncing = this._syncingUnits.has(unitId);
+        this._syncingUnits.add(unitId);
+        return toDisposable(() => {
+            if (!alreadySyncing) {
+                this._syncingUnits.delete(unitId);
+            }
+        });
+    }
+
+    async syncMutation(commandInfo: IMutationInfo, options?: IRemoteSyncMutationOptions): Promise<boolean> {
+        const sync = () => this._remoteReady.then(() =>
+            this._remoteInstanceService.syncMutation({ mutationInfo: commandInfo }, options)
+        );
+        const result = this._syncMutationQueue.then(sync, sync);
+        this._syncMutationQueue = result.catch(() => false);
+        return result;
+    }
+
+    async waitForPendingMutations(): Promise<void> {
+        await this._syncMutationQueue.catch(() => false);
     }
 
     private _initRPCChannels(): void {
@@ -82,13 +130,16 @@ export class DataSyncPrimaryController extends RxDisposable {
         // to call the worker
         this._injector.add([
             IRemoteInstanceService,
+            // eslint-disable-next-line react/no-unnecessary-use-prefix
             { useFactory: () => toModule<IRemoteInstanceService>(this._rpcChannelService.requestChannel(RemoteInstanceServiceName)) },
         ]);
         this._remoteInstanceService = this._injector.get(IRemoteInstanceService);
+        this._remoteReady = this._remoteInstanceService.whenReady();
     }
 
     private _init(): void {
-        this._univerInstanceService.getTypeOfUnitAdded$<Workbook>(UniverInstanceType.UNIVER_SHEET).pipe(takeUntil(this.dispose$)).subscribe((sheet) => {
+        this._univerInstanceService.getTypeOfUnitAdded$<Workbook>(UniverInstanceType.UNIVER_SHEET).pipe(takeUntil(this.dispose$)).subscribe((event) => {
+            const { unit: sheet } = event;
             this._syncingUnits.add(sheet.getUnitId());
 
             // If a sheet is created, it should sync the data to the worker thread.
@@ -118,9 +169,8 @@ export class DataSyncPrimaryController extends RxDisposable {
                 // do not sync mutations from the web worker back to the web worker
                 !(options as IRemoteSyncMutationOptions)?.fromSync &&
                 // do not sync mutations those are not meant to be synced
-                this._syncingMutations.has(id)
-            ) {
-                this._remoteInstanceService.syncMutation({ mutationInfo: commandInfo as IMutationInfo }, options);
+                this._syncingMutations.has(id)) {
+                void this.syncMutation(commandInfo as IMutationInfo, options);
             }
         }));
     }

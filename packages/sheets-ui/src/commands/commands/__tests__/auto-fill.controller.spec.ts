@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import type { ICellData, Injector, IStyleData, Nullable, Univer, Workbook } from '@univerjs/core';
+import type { ICellData, Injector, IRange, IStyleData, Nullable, Workbook } from '@univerjs/core';
 import {
     CellValueType,
     ICommandService,
@@ -31,33 +31,97 @@ import { EditorService, IEditorService } from '@univerjs/docs-ui';
 import { IRenderManagerService, RenderManagerService } from '@univerjs/engine-render';
 import {
     AddWorksheetMergeMutation,
+    AUTO_FILL_APPLY_TYPE,
+    AutoClearContentCommand,
+    AutoFillCommand,
+    AutoFillController,
+    AutoFillService,
+    IAutoFillService,
+    RefillCommand,
     RemoveWorksheetMergeMutation,
     SetRangeValuesMutation,
     SetSelectionsOperation,
+    SheetSkeletonService,
     SheetsSelectionsService,
 } from '@univerjs/sheets';
 import { IPlatformService, IShortcutService, PlatformService, ShortcutService } from '@univerjs/ui';
-import { beforeEach, describe, expect, it } from 'vitest';
-import { AutoFillController } from '../../../controllers/auto-fill.controller';
-import { AutoFillService, IAutoFillService } from '../../../services/auto-fill/auto-fill.service';
-import { APPLY_TYPE } from '../../../services/auto-fill/type';
+import { Subject } from 'rxjs';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { AutoFillRenderController, AutoFillUIController, detectAutoFillRange } from '../../../controllers/auto-fill-ui.controller';
+import { createRenderTestBed } from '../../../controllers/render-controllers/__tests__/render-test-bed';
 import { EditorBridgeService, IEditorBridgeService } from '../../../services/editor-bridge.service';
 import { ISheetSelectionRenderService } from '../../../services/selection/base-selection-render.service';
 import { SheetSelectionRenderService } from '../../../services/selection/selection-render.service';
 import { SheetSkeletonManagerService } from '../../../services/sheet-skeleton-manager.service';
 import { SheetsRenderService } from '../../../services/sheets-render.service';
-import { AutoClearContentCommand, AutoFillCommand } from '../auto-fill.command';
-import { RefillCommand } from '../refill.command';
 import { createCommandTestBed } from './create-command-test-bed';
 
-const theme = {
-    colorBlack: '#35322b',
-};
-
 class mockSheetsRenderService {
-    registerSkeletonChangingMutations(id: string) {
+    registerSkeletonChangingMutations(_id: string) {
     }
 }
+
+describe('AutoFillRenderController', () => {
+    it('routes fill events to the workbook owned by the render context', () => {
+        const selectionFilled$ = new Subject<IRange | null>();
+        const getSelectionControls = vi.fn(() => [{
+            model: {
+                startColumn: 1,
+                endColumn: 1,
+                startRow: 2,
+                endRow: 2,
+            },
+            selectionFilled$,
+            fillControl: {
+                onDblclick$: {
+                    subscribeEvent: vi.fn(() => ({ dispose: vi.fn() })),
+                },
+                onPointerDown$: {
+                    subscribeEvent: vi.fn(() => ({ dispose: vi.fn() })),
+                },
+            },
+        }]);
+        const testBed = createRenderTestBed({
+            dependencies: [
+                [ISheetSelectionRenderService, { useValue: { getSelectionControls } }],
+                [IEditorBridgeService, {
+                    useValue: {
+                        isVisible: () => ({ visible: false }),
+                    },
+                }],
+            ],
+        });
+        const executeCommand = vi.spyOn(testBed.commandService, 'executeCommand').mockResolvedValue(true);
+        const controller = testBed.injector.createInstance(AutoFillRenderController, testBed.context);
+
+        selectionFilled$.next({
+            startColumn: 1,
+            endColumn: 1,
+            startRow: 2,
+            endRow: 5,
+        });
+
+        expect(executeCommand).toHaveBeenCalledWith(AutoFillCommand.id, {
+            sourceRange: {
+                startColumn: 1,
+                endColumn: 1,
+                startRow: 2,
+                endRow: 2,
+            },
+            targetRange: {
+                startColumn: 1,
+                endColumn: 1,
+                startRow: 2,
+                endRow: 5,
+            },
+            unitId: testBed.context.unitId,
+            subUnitId: testBed.sheet.getActiveSheet().getSheetId(),
+        });
+
+        controller.dispose();
+        testBed.univer.dispose();
+    });
+});
 
 const TEST_WORKBOOK_DATA = {
     id: 'test',
@@ -263,10 +327,8 @@ const TEST_WORKBOOK_DATA = {
 };
 
 describe('Test auto fill rules in controller', () => {
-    let univer: Univer;
     let get: Injector['get'];
     let commandService: ICommandService;
-    let autoFillController: AutoFillController;
     let themeService: ThemeService;
 
     let getValues: (
@@ -282,33 +344,31 @@ describe('Test auto fill rules in controller', () => {
         endRow: number,
         endColumn: number
     ) => Array<Array<Nullable<IStyleData>>> | undefined;
-    let selectionManagerService: SheetsSelectionsService;
-
     beforeEach(() => {
         const testBed = createCommandTestBed(TEST_WORKBOOK_DATA, [
             [DocSelectionManagerService],
             [ISheetSelectionRenderService, { useClass: SheetSelectionRenderService }],
+            [SheetSkeletonService],
             [IAutoFillService, { useClass: AutoFillService }],
             [IShortcutService, { useClass: ShortcutService }],
             [IPlatformService, { useClass: PlatformService }],
             [IEditorBridgeService, { useClass: EditorBridgeService }],
             [IEditorService, { useClass: EditorService }],
             [IRenderManagerService, { useClass: RenderManagerService }],
+            [SheetsRenderService, { useClass: mockSheetsRenderService }],
             [SheetSkeletonManagerService],
             [AutoFillController],
-            [SheetsRenderService, { useClass: mockSheetsRenderService }],
+            [AutoFillUIController],
         ]);
-        univer = testBed.univer;
         get = testBed.get;
 
         commandService = get(ICommandService);
         themeService = get(ThemeService);
         const theme = themeService.getCurrentTheme();
-        const newTheme = set(theme, 'black', '#35322b');
+        const newTheme = set(theme, 'gray.1000', '#35322b');
         themeService.setTheme(newTheme);
 
-        autoFillController = get(AutoFillController);
-        selectionManagerService = get(SheetsSelectionsService);
+        get(AutoFillUIController);
         commandService.registerCommand(SetRangeValuesMutation);
         commandService.registerCommand(SetSelectionsOperation);
         commandService.registerCommand(RemoveWorksheetMergeMutation);
@@ -324,7 +384,7 @@ describe('Test auto fill rules in controller', () => {
             endColumn: number
         ): Array<Array<Nullable<ICellData>>> | undefined =>
             get(IUniverInstanceService)
-                .getUniverSheetInstance('test')
+                .getUnit<Workbook>('test', UniverInstanceType.UNIVER_SHEET)
                 ?.getSheetBySheetId('sheet1')
                 ?.getRange(startRow, startColumn, endRow, endColumn)
                 .getValues();
@@ -336,7 +396,7 @@ describe('Test auto fill rules in controller', () => {
             endColumn: number
         ): Array<Array<Nullable<IStyleData>>> | undefined => {
             const values = getValues(startRow, startColumn, endRow, endColumn);
-            const styles = get(IUniverInstanceService).getUniverSheetInstance('test')?.getStyles();
+            const styles = get(IUniverInstanceService).getUnit<Workbook>('test', UniverInstanceType.UNIVER_SHEET)?.getStyles();
             if (values && styles) {
                 return values.map((row) => row.map((cell) => styles.getStyleByCell(cell)));
             }
@@ -346,7 +406,7 @@ describe('Test auto fill rules in controller', () => {
     describe('auto fill', () => {
         describe('auto fill the numbers', async () => {
             it('correct situation', async () => {
-                const workbook = get(IUniverInstanceService).getCurrentUnitForType<Workbook>(UniverInstanceType.UNIVER_SHEET)!;
+                const workbook = get(IUniverInstanceService).getCurrentUnitOfType<Workbook>(UniverInstanceType.UNIVER_SHEET)!;
                 if (!workbook) throw new Error('This is an error');
                 // test number
 
@@ -388,7 +448,7 @@ describe('Test auto fill rules in controller', () => {
 
         describe('auto fill the extend numbers', async () => {
             it('correct situation', async () => {
-                const workbook = get(IUniverInstanceService).getCurrentUnitForType<Workbook>(UniverInstanceType.UNIVER_SHEET)!;
+                const workbook = get(IUniverInstanceService).getCurrentUnitOfType<Workbook>(UniverInstanceType.UNIVER_SHEET)!;
                 if (!workbook) throw new Error('This is an error');
                 // test extend number
                 commandService.executeCommand(AutoFillCommand.id, {
@@ -412,7 +472,7 @@ describe('Test auto fill rules in controller', () => {
 
         describe('auto fill the chinese numbers', async () => {
             it('correct situation', async () => {
-                const workbook = get(IUniverInstanceService).getCurrentUnitForType<Workbook>(UniverInstanceType.UNIVER_SHEET)!;
+                const workbook = get(IUniverInstanceService).getCurrentUnitOfType<Workbook>(UniverInstanceType.UNIVER_SHEET)!;
                 if (!workbook) throw new Error('This is an error');
                 // test chinese number
                 commandService.executeCommand(AutoFillCommand.id, {
@@ -436,7 +496,7 @@ describe('Test auto fill rules in controller', () => {
 
         describe('auto fill the chinese week', async () => {
             it('correct situation', async () => {
-                const workbook = get(IUniverInstanceService).getCurrentUnitForType<Workbook>(UniverInstanceType.UNIVER_SHEET)!;
+                const workbook = get(IUniverInstanceService).getCurrentUnitOfType<Workbook>(UniverInstanceType.UNIVER_SHEET)!;
                 if (!workbook) throw new Error('This is an error');
 
                 // test chinese week
@@ -461,7 +521,7 @@ describe('Test auto fill rules in controller', () => {
 
         describe('auto fill the loop series', async () => {
             it('correct situation', async () => {
-                const workbook = get(IUniverInstanceService).getCurrentUnitForType<Workbook>(UniverInstanceType.UNIVER_SHEET)!;
+                const workbook = get(IUniverInstanceService).getCurrentUnitOfType<Workbook>(UniverInstanceType.UNIVER_SHEET)!;
                 if (!workbook) throw new Error('This is an error');
                 // test loop series
                 commandService.executeCommand(AutoFillCommand.id, {
@@ -485,7 +545,7 @@ describe('Test auto fill rules in controller', () => {
 
         describe('auto fill the other string', async () => {
             it('correct situation', async () => {
-                const workbook = get(IUniverInstanceService).getCurrentUnitForType<Workbook>(UniverInstanceType.UNIVER_SHEET)!;
+                const workbook = get(IUniverInstanceService).getCurrentUnitOfType<Workbook>(UniverInstanceType.UNIVER_SHEET)!;
                 if (!workbook) throw new Error('This is an error');
                 // test other string
                 commandService.executeCommand(AutoFillCommand.id, {
@@ -509,7 +569,7 @@ describe('Test auto fill rules in controller', () => {
 
         describe('auto fill the mixed mode', async () => {
             it('correct situation', async () => {
-                const workbook = get(IUniverInstanceService).getCurrentUnitForType<Workbook>(UniverInstanceType.UNIVER_SHEET)!;
+                const workbook = get(IUniverInstanceService).getCurrentUnitOfType<Workbook>(UniverInstanceType.UNIVER_SHEET)!;
                 if (!workbook) throw new Error('This is an error');
                 // test mixed mode
                 commandService.executeCommand(AutoFillCommand.id, {
@@ -548,7 +608,7 @@ describe('Test auto fill rules in controller', () => {
 
         describe('auto fill the merged cell', async () => {
             it('test primary', async () => {
-                const workbook = get(IUniverInstanceService).getCurrentUnitForType<Workbook>(UniverInstanceType.UNIVER_SHEET)!;
+                const workbook = get(IUniverInstanceService).getCurrentUnitOfType<Workbook>(UniverInstanceType.UNIVER_SHEET)!;
                 if (!workbook) throw new Error('This is an error');
 
                 const selectionManagerService = get(SheetsSelectionsService);
@@ -598,7 +658,7 @@ describe('Test auto fill rules in controller', () => {
 
         describe('auto fill clear', async () => {
             it('test primary will move to upper left corner', async () => {
-                const workbook = get(IUniverInstanceService).getCurrentUnitForType<Workbook>(UniverInstanceType.UNIVER_SHEET)!;
+                const workbook = get(IUniverInstanceService).getCurrentUnitOfType<Workbook>(UniverInstanceType.UNIVER_SHEET)!;
                 if (!workbook) throw new Error('This is an error');
 
                 const selectionManagerService = get(SheetsSelectionsService);
@@ -650,14 +710,22 @@ describe('Test auto fill rules in controller', () => {
 
     describe('auto fill range is auto detected', async () => {
         it('correct situation', async () => {
-            const workbook = get(IUniverInstanceService).getCurrentUnitForType<Workbook>(UniverInstanceType.UNIVER_SHEET)!;
+            const workbook = get(IUniverInstanceService).getCurrentUnitOfType<Workbook>(UniverInstanceType.UNIVER_SHEET)!;
             if (!workbook) throw new Error('This is an error');
             // test other string
-            (autoFillController as any)._handleDbClickFill({
+            const sourceRange: IRange = {
                 startRow: 10,
                 startColumn: 1,
                 endRow: 10,
                 endColumn: 1,
+            };
+            const worksheet = workbook.getSheetBySheetId('sheet1');
+            if (!worksheet) throw new Error('Worksheet sheet1 does not exist');
+            await commandService.executeCommand(AutoFillCommand.id, {
+                sourceRange,
+                targetRange: detectAutoFillRange(sourceRange, worksheet),
+                unitId: workbook.getUnitId(),
+                subUnitId: worksheet.getSheetId(),
             });
             expect(workbook.getSheetBySheetId('sheet1')?.getCell(11, 1)?.v).toBe(2);
             expect(workbook.getSheetBySheetId('sheet1')?.getCell(12, 1)?.v).toBe(2);
@@ -678,7 +746,7 @@ describe('Test auto fill rules in controller', () => {
 
     describe('auto fill in left direction', async () => {
         it('correct situation', async () => {
-            const workbook = get(IUniverInstanceService).getCurrentUnitForType<Workbook>(UniverInstanceType.UNIVER_SHEET)!;
+            const workbook = get(IUniverInstanceService).getCurrentUnitOfType<Workbook>(UniverInstanceType.UNIVER_SHEET)!;
             if (!workbook) throw new Error('This is an error');
             // test other string
             commandService.executeCommand(AutoFillCommand.id, {
@@ -710,7 +778,7 @@ describe('Test auto fill rules in controller', () => {
 
     describe('auto fill with equal ratio & style', async () => {
         it('correct situation', async () => {
-            const workbook = get(IUniverInstanceService).getCurrentUnitForType<Workbook>(UniverInstanceType.UNIVER_SHEET)!;
+            const workbook = get(IUniverInstanceService).getCurrentUnitOfType<Workbook>(UniverInstanceType.UNIVER_SHEET)!;
             if (!workbook) throw new Error('This is an error');
             // equal ratio
             commandService.executeCommand(AutoFillCommand.id, {
@@ -758,7 +826,7 @@ describe('Test auto fill rules in controller', () => {
 
     describe('auto fill without format', async () => {
         it('correct situation', async () => {
-            const workbook = get(IUniverInstanceService).getCurrentUnitForType<Workbook>(UniverInstanceType.UNIVER_SHEET)!;
+            const workbook = get(IUniverInstanceService).getCurrentUnitOfType<Workbook>(UniverInstanceType.UNIVER_SHEET)!;
             if (!workbook) throw new Error('This is an error');
             // equal ratio
             commandService.executeCommand(AutoFillCommand.id, {
@@ -785,7 +853,7 @@ describe('Test auto fill rules in controller', () => {
                 vt: 2,
             });
 
-            commandService.executeCommand(RefillCommand.id, { type: APPLY_TYPE.NO_FORMAT });
+            commandService.executeCommand(RefillCommand.id, { type: AUTO_FILL_APPLY_TYPE.NO_FORMAT });
 
             expect(workbook.getSheetBySheetId('sheet1')?.getCell(14, 4)?.v).toBe(6);
             const styles_refill = getStyles(14, 4, 14, 4);
@@ -819,7 +887,7 @@ describe('Test auto fill rules in controller', () => {
 
     describe('auto fill from single cell', async () => {
         it('correct situation', async () => {
-            const workbook = get(IUniverInstanceService).getCurrentUnitForType<Workbook>(UniverInstanceType.UNIVER_SHEET)!;
+            const workbook = get(IUniverInstanceService).getCurrentUnitOfType<Workbook>(UniverInstanceType.UNIVER_SHEET)!;
             if (!workbook) throw new Error('This is an error');
             // test right
             commandService.executeCommand(AutoFillCommand.id, {

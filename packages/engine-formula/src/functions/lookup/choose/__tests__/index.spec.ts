@@ -19,7 +19,7 @@ import { ErrorType } from '../../../../basics/error-type';
 import { ArrayValueObject, transformToValueObject } from '../../../../engine/value-object/array-value-object';
 import { ErrorValueObject } from '../../../../engine/value-object/base-value-object';
 import { NumberValueObject, StringValueObject } from '../../../../engine/value-object/primitive-object';
-import { getObjectValue } from '../../../__tests__/create-function-test-bed';
+import { getObjectValue } from '../../../util';
 import { FUNCTION_NAMES_LOOKUP } from '../../function-names';
 import { Choose } from '../index';
 
@@ -62,6 +62,22 @@ describe('Test choose function', () => {
 
             const resultObject = testFunction.calculate(indexNum, value1, value2);
             expect(getObjectValue(resultObject)).toStrictEqual([[11, 'second', ErrorType.VALUE]]);
+        });
+
+        it('combines two vertical dynamic arrays into columns', () => {
+            const indexNum = ArrayValueObject.create('{1,2}');
+            const values = ArrayValueObject.create('{"Red";"Green";"Blue";"Purple";"White"}');
+            const counts = ArrayValueObject.create('{4;3;2;2;1}');
+
+            const resultObject = testFunction.calculate(indexNum, values, counts);
+
+            expect(getObjectValue(resultObject)).toStrictEqual([
+                ['Red', 4],
+                ['Green', 3],
+                ['Blue', 2],
+                ['Purple', 2],
+                ['White', 1],
+            ]);
         });
 
         it('Index num number, value1 array', async () => {

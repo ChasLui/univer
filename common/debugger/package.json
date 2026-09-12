@@ -1,6 +1,6 @@
 {
     "name": "@univerjs/debugger",
-    "version": "0.15.3",
+    "version": "1.0.0-rc.0",
     "private": true,
     "description": "",
     "author": "DreamNum <developer@univer.ai>",
@@ -23,34 +23,8 @@
         "./*": "./src/*"
     },
     "main": "./src/index.ts",
-    "types": "./lib/types/index.d.ts",
-    "publishConfig": {
-        "access": "public",
-        "main": "./lib/es/index.js",
-        "module": "./lib/es/index.js",
-        "exports": {
-            ".": {
-                "import": "./lib/es/index.js",
-                "require": "./lib/cjs/index.js",
-                "types": "./lib/types/index.d.ts"
-            },
-            "./*": {
-                "import": "./lib/es/*",
-                "require": "./lib/cjs/*",
-                "types": "./lib/types/index.d.ts"
-            },
-            "./lib/*": "./lib/*"
-        }
-    },
-    "directories": {
-        "lib": "lib"
-    },
-    "files": [
-        "lib"
-    ],
     "scripts": {
-        "typecheck": "tsc --noEmit",
-        "build": "univer-cli build --skipUMD"
+        "typecheck": "tsc --noEmit"
     },
     "peerDependencies": {
         "react": "^16.9.0 || ^17.0.0 || ^18.0.0 || ^19.0.0 || ^19.0.0-rc",
@@ -61,8 +35,7 @@
         "@univerjs/design": "workspace:*",
         "@univerjs/docs-drawing-ui": "workspace:*",
         "@univerjs/engine-render": "workspace:*",
-        "@univerjs/icons": "^1.1.1",
-        "@univerjs/mockdata": "workspace:*",
+        "@univerjs/icons": "1.38.0",
         "@univerjs/sheets": "workspace:*",
         "@univerjs/sheets-drawing-ui": "workspace:*",
         "@univerjs/themes": "workspace:*",
@@ -71,13 +44,11 @@
     },
     "devDependencies": {
         "@univerjs-infra/shared": "workspace:*",
-        "postcss": "^8.5.6",
+        "postcss": "^8.5.26",
         "react": "18.3.1",
         "rxjs": "^7.8.2",
         "tailwindcss": "3.4.18",
-        "typescript": "^5.9.3",
-        "vite": "^7.3.1",
-        "vitest": "^4.0.18",
-        "vue": "^3.5.27"
+        "typescript": "^6.0.3",
+        "vue": "^3.5.40"
     }
 }

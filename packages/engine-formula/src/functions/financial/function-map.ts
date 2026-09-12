@@ -14,9 +14,9 @@
  * limitations under the License.
  */
 
-import { FUNCTION_NAMES_FINANCIAL } from './function-names';
 import { Accrint } from './accrint';
 import { Accrintm } from './accrintm';
+// import { Amordegrc } from './amordegrc';
 import { Amorlinc } from './amorlinc';
 import { Coupdaybs } from './coupdaybs';
 import { Coupdays } from './coupdays';
@@ -33,6 +33,7 @@ import { Dollarde } from './dollarde';
 import { Dollarfr } from './dollarfr';
 import { Duration } from './duration';
 import { Effect } from './effect';
+import { FUNCTION_NAMES_FINANCIAL } from './function-names';
 import { Fv } from './fv';
 import { Fvschedule } from './fvschedule';
 import { Intrate } from './intrate';
@@ -73,6 +74,7 @@ import { Yieldmat } from './yieldmat';
 export const functionFinancial = [
     [Accrint, FUNCTION_NAMES_FINANCIAL.ACCRINT],
     [Accrintm, FUNCTION_NAMES_FINANCIAL.ACCRINTM],
+    // [Amordegrc, FUNCTION_NAMES_FINANCIAL.AMORDEGRC],
     [Amorlinc, FUNCTION_NAMES_FINANCIAL.AMORLINC],
     [Coupdaybs, FUNCTION_NAMES_FINANCIAL.COUPDAYBS],
     [Coupdays, FUNCTION_NAMES_FINANCIAL.COUPDAYS],

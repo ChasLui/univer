@@ -14,7 +14,10 @@
  * limitations under the License.
  */
 
-import { DocumentDataModel, Inject, LocaleService, PageElementType } from '@univerjs/core';
+import type { EventState, Injector } from '@univerjs/core';
+import type { BaseObject, IDocumentSkeletonDrawing, IPageRenderConfig, IWheelEvent } from '@univerjs/engine-render';
+import type { IPageElement } from '../../../types/interfaces/i-slide-data';
+import { DocumentDataModel, Inject, LocaleService } from '@univerjs/core';
 import {
     Documents,
     DocumentSkeleton,
@@ -28,9 +31,7 @@ import {
     ScrollBar,
     Viewport,
 } from '@univerjs/engine-render';
-import type { EventState, Injector, IPageElement } from '@univerjs/core';
-import type { BaseObject, IDocumentSkeletonDrawing, IPageRenderConfig, IWheelEvent } from '@univerjs/engine-render';
-
+import { PageElementType } from '../../../types/interfaces/i-slide-data';
 import { CanvasObjectProviderRegistry, ObjectAdaptor } from '../adaptor';
 
 export enum DOCS_VIEW_KEY {
@@ -156,7 +157,7 @@ export class DocsAdaptor extends ObjectAdaptor {
 
         documents.resize(size.actualWidth, size.actualHeight);
 
-        scene.resize(size.actualWidth, size.actualHeight + 200);
+        scene.transformByState({ width: size.actualWidth, height: size.actualHeight + 200 });
 
         const pageSize = documents.getSkeleton()?.getPageSize();
 
@@ -298,7 +299,7 @@ export class DocsAdaptor extends ObjectAdaptor {
 
         docsComponent.resize(width, height);
 
-        scene.resize(width, height);
+        scene.transformByState({ width, height });
     }
 
     private _calculatePagePosition(docsComponent: Documents, scene: Scene, viewport: Viewport, zoomRatio: number = 1) {
@@ -343,7 +344,7 @@ export class DocsAdaptor extends ObjectAdaptor {
 
         // this.docsTop = docsTop;
 
-        scene.resize(sceneWidth, sceneHeight + 200);
+        scene.transformByState({ width: sceneWidth, height: sceneHeight + 200 });
 
         docsComponent.translate(docsLeft, docsTop);
 

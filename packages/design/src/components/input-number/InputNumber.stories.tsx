@@ -66,3 +66,19 @@ export const InputNumberHideControls = {
         );
     },
 };
+
+export const InputNumberAllowClear = {
+    render() {
+        return <InputNumber allowClear allowEmpty defaultValue={12} />;
+    },
+};
+
+export const InputNumberRtl = {
+    render() {
+        return (
+            <div dir="rtl">
+                <InputNumber defaultValue={12} />
+            </div>
+        );
+    },
+};

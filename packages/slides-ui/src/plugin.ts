@@ -14,26 +14,50 @@
  * limitations under the License.
  */
 
-import type { Dependency, SlideDataModel } from '@univerjs/core';
-import type { IUniverSlidesUIConfig } from './controllers/config.schema';
-import { IConfigService, Inject, Injector, IUniverInstanceService, merge, mergeOverrideWithDependencies, Plugin, UniverInstanceType } from '@univerjs/core';
-import { IRenderManagerService } from '@univerjs/engine-render';
+import type { Dependency } from '@univerjs/core';
+import type { SlideDataModel } from '@univerjs/slides';
+import type { IUniverSlidesUIConfig } from './config/config';
+import {
+    DependentOn,
+    IConfigService,
+    Inject,
+    Injector,
+    IUniverInstanceService,
+    merge,
+    mergeOverrideWithDependencies,
+    Plugin,
+    UniverInstanceType,
+} from '@univerjs/core';
+import { UniverDocsPlugin } from '@univerjs/docs';
+import { UniverDocsUIPlugin } from '@univerjs/docs-ui';
+import { UniverDrawingPlugin } from '@univerjs/drawing';
+import { IRenderManagerService, UniverRenderEnginePlugin } from '@univerjs/engine-render';
+import { UniverSlidesPlugin } from '@univerjs/slides';
+import pkg from '../package.json';
+import { defaultPluginConfig, SLIDES_UI_PLUGIN_CONFIG_KEY } from './config/config';
 import { CanvasView } from './controllers/canvas-view';
-import { defaultPluginConfig, SLIDES_UI_PLUGIN_CONFIG_KEY } from './controllers/config.schema';
-import { SlidePopupMenuController } from './controllers/popup-menu.controller';
+import { ComponentsController } from './controllers/components.controller';
 import { SlideEditingRenderController } from './controllers/slide-editing.render-controller';
 import { SlideEditorBridgeRenderController } from './controllers/slide-editor-bridge.render-controller';
-import { SlidesUIController } from './controllers/slide-ui.controller';
 import { SlideRenderController } from './controllers/slide.render-controller';
+import { SlidesUIController } from './controllers/ui.controller';
+import { SlidePopupMenuController } from './menu/popup-menu.controller';
 import { ISlideEditorBridgeService, SlideEditorBridgeService } from './services/slide-editor-bridge.service';
 import { ISlideEditorManagerService, SlideEditorManagerService } from './services/slide-editor-manager.service';
 import { SlideCanvasPopMangerService } from './services/slide-popup-manager.service';
 import { SlideRenderService } from './services/slide-render.service';
 
-export const SLIDE_UI_PLUGIN_NAME = 'SLIDE_UI';
-
+@DependentOn(
+    UniverDocsPlugin,
+    UniverDrawingPlugin,
+    UniverRenderEnginePlugin,
+    UniverSlidesPlugin,
+    UniverDocsUIPlugin
+)
 export class UniverSlidesUIPlugin extends Plugin {
-    static override pluginName = SLIDE_UI_PLUGIN_NAME;
+    static override pluginName = 'UNIVER_SLIDES_UI_PLUGIN';
+    static override packageName = pkg.name;
+    static override version = pkg.version;
     static override type = UniverInstanceType.UNIVER_SLIDE;
 
     constructor(
@@ -58,6 +82,8 @@ export class UniverSlidesUIPlugin extends Plugin {
     }
 
     override onStarting(): void {
+        this._injector.add([ComponentsController]);
+        this._injector.get(ComponentsController);
         mergeOverrideWithDependencies([
             [SlideRenderService],
             [ISlideEditorBridgeService, { useClass: SlideEditorBridgeService }],
@@ -120,7 +146,7 @@ export class UniverSlidesUIPlugin extends Plugin {
     private _markSlideAsFocused() {
         const currentService = this._univerInstanceService;
         try {
-            const slideDataModel = currentService.getCurrentUnitForType<SlideDataModel>(UniverInstanceType.UNIVER_SLIDE)!;
+            const slideDataModel = currentService.getCurrentUnitOfType<SlideDataModel>(UniverInstanceType.UNIVER_SLIDE)!;
             currentService.focusUnit(slideDataModel.getUnitId());
         } catch (e) {
         }

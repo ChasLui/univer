@@ -14,14 +14,15 @@
  * limitations under the License.
  */
 
+import type { IPermissionPoint } from '@univerjs/core';
 import type { UnitAction } from '@univerjs/protocol';
 
-import type { IObjectModel } from '../../../model/range-protection-rule.model';
-import { Disposable, Inject, IPermissionService, IResourceManagerService, IUniverInstanceService } from '@univerjs/core';
-import { UnitObject, UniverType } from '@univerjs/protocol';
-import { RangeProtectionRuleModel } from '../../../model/range-protection-rule.model';
+import type { IObjectModel } from '../../../models/range-protection-rule.model';
+import { Disposable, Inject, IPermissionService, IResourceManagerService, IUniverInstanceService, UniverInstanceType } from '@univerjs/core';
+import { UnitObject } from '@univerjs/protocol';
+import { RangeProtectionRuleModel } from '../../../models/range-protection-rule.model';
 
-import { RangeProtectionCache } from '../../../model/range-protection.cache';
+import { RangeProtectionCache } from '../../../models/range-protection.cache';
 import { baseProtectionActions, getAllRangePermissionPoint } from './util';
 
 const PLUGIN_NAME = 'SHEET_RANGE_PROTECTION_PLUGIN';
@@ -95,7 +96,7 @@ export class RangeProtectionService extends Disposable {
                 toJson,
                 parseJson,
                 pluginName: PLUGIN_NAME,
-                businesses: [UniverType.UNIVER_SHEET],
+                businesses: [UniverInstanceType.UNIVER_SHEET],
                 onLoad: (unitId, resources) => {
                     const result = this._selectionProtectionRuleModel.toObject();
                     result[unitId] = resources;
@@ -121,7 +122,7 @@ export class RangeProtectionService extends Disposable {
                             getAllRangePermissionPoint().forEach((Factor) => {
                                 const instance = new Factor(unitId, subUnitId, rule.permissionId);
                                 instance.value = false;
-                                this._permissionService.addPermissionPoint(instance);
+                                this._addOrUpdatePermissionPoint(instance);
                             });
                         });
                         this._selectionProtectionCache.reBuildCache(unitId, subUnitId);
@@ -132,5 +133,14 @@ export class RangeProtectionService extends Disposable {
                 },
             })
         );
+    }
+
+    private _addOrUpdatePermissionPoint(instance: IPermissionPoint) {
+        if (this._permissionService.getPermissionPoint(instance.id)) {
+            this._permissionService.updatePermissionPoint(instance.id, instance.value);
+            return;
+        }
+
+        this._permissionService.addPermissionPoint(instance);
     }
 }

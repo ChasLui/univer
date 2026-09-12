@@ -16,8 +16,6 @@
 
 /**
  * Theme color type enum
- *
- * @deprecated
  */
 export enum ThemeColorType {
     /**
@@ -43,11 +41,8 @@ export enum ThemeColorType {
     FOLLOWED_HYPERLINK,
 }
 
-// TODO: get color list to color picker
-// TODO: 取色
-
 /**
- * @deprecated
+ * Preset theme names.
  */
 export enum ThemeColors {
     OFFICE = 'Office',

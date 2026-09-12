@@ -14,8 +14,8 @@
  * limitations under the License.
  */
 
+import { DateSystem, excelDateSerial } from '@univerjs/core';
 import { describe, expect, it } from 'vitest';
-import { excelDateSerial } from '../../../../basics/date';
 import { ErrorType } from '../../../../basics/error-type';
 import { ArrayValueObject, transformToValueObject } from '../../../../engine/value-object/array-value-object';
 import { ErrorValueObject } from '../../../../engine/value-object/base-value-object';
@@ -35,7 +35,7 @@ describe('Test datevalue function', () => {
 
             const dateText2 = StringValueObject.create('5-Jul'); // 7.5 of current year
             const result2 = testFunction.calculate(dateText2);
-            expect(getObjectValue(result2)).toStrictEqual(excelDateSerial(new Date(new Date().getFullYear(), 6, 5)));
+            expect(getObjectValue(result2)).toStrictEqual(excelDateSerial(new Date(Date.UTC(new Date().getUTCFullYear(), 6, 5))));
 
             const dateText3 = StringValueObject.create('2020-01-02 13:14:15');
             const result3 = testFunction.calculate(dateText3);
@@ -44,6 +44,18 @@ describe('Test datevalue function', () => {
             const dateText4 = StringValueObject.create('10:11:12');
             const result4 = testFunction.calculate(dateText4);
             expect(getObjectValue(result4)).toStrictEqual(0);
+        });
+
+        it('uses the configured Excel date system', () => {
+            testFunction.setDateSystem(DateSystem.Date1900);
+            expect(getObjectValue(testFunction.calculate(StringValueObject.create('1904-1-1')))).toBe(1462);
+            expect(getObjectValue(testFunction.calculate(StringValueObject.create('1904-2-2')))).toBe(1494);
+
+            testFunction.setDateSystem(DateSystem.Date1904);
+            expect(getObjectValue(testFunction.calculate(StringValueObject.create('1904-1-1')))).toBe(0);
+            expect(getObjectValue(testFunction.calculate(StringValueObject.create('1904-2-2')))).toBe(32);
+
+            testFunction.setDateSystem(DateSystem.Date1900);
         });
 
         it('Date text number', () => {

@@ -15,10 +15,10 @@
  */
 
 import type { ICommand } from '@univerjs/core';
+import type { IRangeProtectionRule } from '../../models/range-protection-rule.model';
 import { CommandType, ICommandService, IUndoRedoService } from '@univerjs/core';
-import { DeleteRangeProtectionMutation } from '../mutations/delete-range-protection.mutation';
 import { AddRangeProtectionMutation } from '../mutations/add-range-protection.mutation';
-import type { IRangeProtectionRule } from '../../model/range-protection-rule.model';
+import { DeleteRangeProtectionMutation } from '../mutations/delete-range-protection.mutation';
 
 export interface IDeleteRangeProtectionCommandParams {
     unitId: string;

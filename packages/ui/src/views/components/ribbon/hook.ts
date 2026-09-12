@@ -14,9 +14,13 @@
  * limitations under the License.
  */
 
-import type { Subscription } from 'rxjs';
+import type { Observable } from 'rxjs';
 import type { IDisplayMenuItem, IMenuItem } from '../../../services/menu/menu';
-import { useEffect, useState } from 'react';
+import { useMemo } from 'react';
+import { EMPTY, map, merge, of, startWith } from 'rxjs';
+import { isMenuButtonSelectorItem } from '../../../services/menu/menu';
+import { IShortcutService } from '../../../services/shortcut/shortcut.service';
+import { useDependency, useObservable } from '../../../utils/di';
 
 export interface IToolbarItemStatus {
     disabled: boolean;
@@ -24,9 +28,9 @@ export interface IToolbarItemStatus {
     value: any;
     activated: boolean;
     hidden: boolean;
+    // eslint-disable-next-line ts/no-explicit-any
+    selectionsValue: any;
 }
-
-// TODO@wzhudev: maybe we should use `useObservable` here.
 
 /**
  * Subscribe to a menu item's status change and return the latest status.
@@ -37,21 +41,46 @@ export function useToolbarItemStatus(menuItem: IDisplayMenuItem<IMenuItem>): ITo
     const { disabled$, hidden$, activated$, value$ } = menuItem;
 
     // eslint-disable-next-line ts/no-explicit-any
-    const [value, setValue] = useState<any>();
-    const [disabled, setDisabled] = useState(false);
-    const [activated, setActivated] = useState(false);
-    const [hidden, setHidden] = useState(false);
+    let selectionsValue$: Observable<any> | undefined;
 
-    useEffect(() => {
-        const subscriptions: Subscription[] = [];
+    if (isMenuButtonSelectorItem(menuItem)) {
+        const { selections } = menuItem;
 
-        disabled$ && subscriptions.push(disabled$.subscribe((disabled) => setDisabled(disabled)));
-        hidden$ && subscriptions.push(hidden$.subscribe((hidden) => setHidden(hidden)));
-        activated$ && subscriptions.push(activated$.subscribe((activated) => setActivated(activated)));
-        value$ && subscriptions.push(value$.subscribe((value) => setValue(value)));
+        if (Array.isArray(selections)) {
+            selectionsValue$ = selections?.[0]?.value$;
+        }
+    }
 
-        return () => subscriptions.forEach((subscription) => subscription.unsubscribe());
-    }, [activated$, disabled$, hidden$, value$]);
+    const disabled = useObservable(disabled$ ?? null, false);
+    const activated = useObservable(activated$ ?? null, false);
+    const hidden = useObservable(hidden$ ?? null, false);
+    const valueObservable = useMemo(
+        () => merge(value$ ?? EMPTY, selectionsValue$ ?? EMPTY),
+        [selectionsValue$, value$]
+    );
+    const value = useObservable(valueObservable);
+    const selectionsValue = useObservable(selectionsValue$ ?? null);
 
-    return { disabled, value, activated, hidden };
+    return { disabled, value, activated, hidden, selectionsValue };
+}
+
+export function useToolbarShortcutDisplay({
+    id,
+    commandId,
+    shortcut,
+}: Pick<IDisplayMenuItem<IMenuItem>, 'id' | 'commandId' | 'shortcut'>): string | null {
+    const shortcutService = useDependency(IShortcutService);
+    const shortcutCommandId = commandId ?? id;
+
+    const shortcut$ = useMemo(
+        () => shortcut
+            ? of(shortcut)
+            : shortcutService.shortcutChanged$.pipe(
+                map(() => shortcutService.getShortcutDisplayOfCommand(shortcutCommandId)),
+                startWith(shortcutService.getShortcutDisplayOfCommand(shortcutCommandId))
+            ),
+        [shortcut, shortcutService, shortcutCommandId]
+    );
+
+    return useObservable(shortcut$, null, true) as string | null;
 }

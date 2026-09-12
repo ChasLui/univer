@@ -15,32 +15,30 @@
  */
 
 import type { Dependency } from '@univerjs/core';
-import type { Engine } from '@univerjs/engine-render';
-import { IConfigService, Inject, Injector, merge, Plugin, UniverInstanceType } from '@univerjs/core';
-import { IRenderingEngine, IRenderManagerService } from '@univerjs/engine-render';
-import { defaultPluginConfig, SLIDES_PLUGIN_CONFIG_KEY } from './controllers/config.schema';
+import { DependentOn, IConfigService, Inject, Injector, IUniverInstanceService, merge, Plugin, UniverInstanceType } from '@univerjs/core';
+import { UniverRenderEnginePlugin } from '@univerjs/engine-render';
+import pkg from '../package.json';
+import { defaultPluginConfig, SLIDES_PLUGIN_CONFIG_KEY } from './config/config';
+import { SlideDataModel } from './data-model/slide-data-model';
 // import { DocSelectionManagerService } from '@univerjs/docs';
 // import { CanvasView } from './views/render';
 
 export interface IUniverSlidesConfig {}
 
-const DEFAULT_SLIDE_PLUGIN_DATA = {};
-
-const PLUGIN_NAME = 'slides';
-
+@DependentOn(UniverRenderEnginePlugin)
 export class UniverSlidesPlugin extends Plugin {
-    static override pluginName = PLUGIN_NAME;
+    static override pluginName = 'UNIVER_SLIDES_PLUGIN';
+    static override packageName = pkg.name;
+    static override version = pkg.version;
     static override type = UniverInstanceType.UNIVER_SLIDE;
-
-    private _canvasEngine: Engine | null = null;
 
     // private _canvasView: CanvasView | null = null;
 
     constructor(
         private readonly _config: Partial<IUniverSlidesConfig> = defaultPluginConfig,
         @Inject(Injector) override readonly _injector: Injector,
-        @IRenderManagerService private readonly _renderManagerService: IRenderManagerService,
-        @IConfigService private readonly _configService: IConfigService
+        @IConfigService private readonly _configService: IConfigService,
+        @IUniverInstanceService private readonly _univerInstanceService: IUniverInstanceService
     ) {
         super();
 
@@ -55,8 +53,9 @@ export class UniverSlidesPlugin extends Plugin {
         this._initializeDependencies(this._injector);
     }
 
-    initialize(): void {
-        this.initCanvasEngine();
+    override onStarting(): void {
+        // Register the SlideDataModel constructor for the UNIVER_SLIDE type.
+        this._univerInstanceService.registerCtorForType(UniverInstanceType.UNIVER_SLIDE, SlideDataModel);
     }
 
     override onReady(): void {
@@ -65,18 +64,6 @@ export class UniverSlidesPlugin extends Plugin {
 
     getConfig() {
         return this._config;
-    }
-
-    initCanvasEngine() {
-        this._canvasEngine = this._injector.get(IRenderingEngine);
-    }
-
-    override onRendered(): void {
-        this.initialize();
-    }
-
-    getCanvasEngine() {
-        return this._canvasEngine;
     }
 
     private _initializeDependencies(slideInjector: Injector) {

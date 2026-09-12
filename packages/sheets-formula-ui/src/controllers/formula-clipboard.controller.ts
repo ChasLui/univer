@@ -15,8 +15,8 @@
  */
 
 import type { IAccessor, ICellData, ICellDataWithSpanAndDisplay, IMutationInfo, IRange, Nullable, Workbook, Worksheet } from '@univerjs/core';
-import type { ISetRangeValuesMutationParams } from '@univerjs/sheets';
-import type { ICellDataWithSpanInfo, ICopyPastePayload, IDiscreteRange, IPasteHookValueType, ISheetClipboardHook, ISheetDiscreteRangeLocation } from '@univerjs/sheets-ui';
+import type { IDiscreteRange, ISetRangeValuesMutationParams } from '@univerjs/sheets';
+import type { ICellDataWithSpanInfo, ICopyPastePayload, IPasteHookValueType, ISheetClipboardHook, ISheetDiscreteRangeLocation } from '@univerjs/sheets-ui';
 import {
     DEFAULT_EMPTY_DOCUMENT_VALUE,
     Disposable,
@@ -187,6 +187,13 @@ export class FormulaClipboardController extends Disposable {
             };
         }
 
+        if (payload.copyType === COPY_TYPE.CUT && !isSpecialPaste) {
+            return {
+                undos: [],
+                redos: [],
+            };
+        }
+
         const workbook = this._getWorkbook();
         const unitId = pasteTo.unitId || workbook?.getUnitId();
         const subUnitId = pasteTo.subUnitId || workbook?.getActiveSheet()?.getSheetId();
@@ -234,7 +241,7 @@ export function getSetCellFormulaMutations(
     },
     lexerTreeBuilder: LexerTreeBuilder,
     formulaDataModel: FormulaDataModel,
-    isSpecialPaste = false,
+    _isSpecialPaste = false,
     pasteFrom: ISheetDiscreteRangeLocation | null
 ) {
     const redoMutationsInfo: IMutationInfo[] = [];
@@ -253,7 +260,7 @@ export function getSetCellFormulaMutations(
     const setValuesMutation: ISetRangeValuesMutationParams = {
         unitId,
         subUnitId,
-        cellValue: valueMatrix.getData(),
+        cellValue: valueMatrix.clone(),
     };
 
     redoMutationsInfo.push({

@@ -19,15 +19,15 @@ import type { IAddWorksheetMergeMutationParams, IRemoveWorksheetMergeMutationPar
 import type { ISetRangeValuesMutationParams } from '../mutations/set-range-values.mutation';
 import type { ISheetCommandSharedParams } from '../utils/interface';
 import { CommandType, ICommandService, IUndoRedoService, IUniverInstanceService, ObjectMatrix, Rectangle, sequenceExecute, Tools } from '@univerjs/core';
-import { SetSelectionsOperation } from '../../commands/operations/selection.operation';
 import { SelectionMoveType } from '../../services/selections';
 import { SheetsSelectionsService } from '../../services/selections/selection.service';
 import { AddWorksheetMergeMutation } from '../mutations/add-worksheet-merge.mutation';
 import { RemoveMergeUndoMutationFactory, RemoveWorksheetMergeMutation } from '../mutations/remove-worksheet-merge.mutation';
-import { SetRangeValuesMutation } from '../mutations/set-range-values.mutation';
+import { SetRangeValuesMutation, SetRangeValuesUndoMutationFactory } from '../mutations/set-range-values.mutation';
+import { SetSelectionsOperation } from '../operations/selection.operation';
 import { getSheetCommandTarget } from './utils/target-util';
 
-interface IRemoveWorksheetMergeCommandParams extends ISheetCommandSharedParams {
+export interface IRemoveWorksheetMergeCommandParams extends ISheetCommandSharedParams {
     ranges?: IRange[];
 }
 
@@ -59,7 +59,7 @@ export const RemoveWorksheetMergeCommand: ICommand = {
         });
         if (!intersectsMerges.length) return false;
 
-        const undoredoMutationParams: IAddWorksheetMergeMutationParams = RemoveMergeUndoMutationFactory(
+        const undoRedoMutationParams: IAddWorksheetMergeMutationParams = RemoveMergeUndoMutationFactory(
             accessor,
             removeMergeMutationParams
         );
@@ -87,16 +87,15 @@ export const RemoveWorksheetMergeCommand: ICommand = {
         const redoSetRangeValueParams: ISetRangeValuesMutationParams = {
             unitId,
             subUnitId,
-            cellValue: getSetRangeValuesParams.redoParams.getMatrix(),
+            cellValue: getSetRangeValuesParams.getMatrix(),
         };
-        const undoSetRangeValueParams: ISetRangeValuesMutationParams = {
-            unitId,
-            subUnitId,
-            cellValue: getSetRangeValuesParams.undoParams.getMatrix(),
-        };
+        const undoSetRangeValueParams: ISetRangeValuesMutationParams = SetRangeValuesUndoMutationFactory(
+            accessor,
+            redoSetRangeValueParams
+        );
 
         const redoMutations: IMutationInfo[] = [
-            { id: RemoveWorksheetMergeMutation.id, params: undoredoMutationParams },
+            { id: RemoveWorksheetMergeMutation.id, params: undoRedoMutationParams },
             { id: SetRangeValuesMutation.id, params: redoSetRangeValueParams },
             {
                 id: SetSelectionsOperation.id,
@@ -110,7 +109,7 @@ export const RemoveWorksheetMergeCommand: ICommand = {
         ];
 
         const undoMutations: IMutationInfo[] = [
-            { id: AddWorksheetMergeMutation.id, params: undoredoMutationParams },
+            { id: AddWorksheetMergeMutation.id, params: undoRedoMutationParams },
             { id: SetRangeValuesMutation.id, params: undoSetRangeValueParams },
             {
                 id: SetSelectionsOperation.id,
@@ -125,7 +124,7 @@ export const RemoveWorksheetMergeCommand: ICommand = {
 
         const result = sequenceExecute(redoMutations, commandService);
 
-        if (result) {
+        if (result.result) {
             undoRedoService.pushUndoRedo({
                 unitID: unitId,
                 undoMutations,
@@ -139,7 +138,6 @@ export const RemoveWorksheetMergeCommand: ICommand = {
 
 function getSetRangeStyleParamsForRemoveMerge(worksheet: Worksheet, ranges: IRange[]) {
     const styleRedoMatrix = new ObjectMatrix<Nullable<ICellData>>();
-    const styleUndoMatrix = new ObjectMatrix<Nullable<ICellData>>();
 
     ranges.forEach((range) => {
         const { startRow, startColumn, endColumn, endRow } = range;
@@ -149,15 +147,11 @@ function getSetRangeStyleParamsForRemoveMerge(worksheet: Worksheet, ranges: IRan
                 for (let j = startColumn; j <= endColumn; j++) {
                     if (i !== startRow || j !== startColumn) {
                         styleRedoMatrix.setValue(i, j, { s: cellValue.s });
-                        styleUndoMatrix.setValue(i, j, null);
                     }
                 }
             }
         }
     });
 
-    return {
-        redoParams: styleRedoMatrix,
-        undoParams: styleUndoMatrix,
-    };
+    return styleRedoMatrix;
 }

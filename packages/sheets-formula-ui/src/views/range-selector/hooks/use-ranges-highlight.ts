@@ -27,7 +27,7 @@ import { useDocHight } from '../../formula-editor/hooks/use-highlight';
 export function useRangesHighlight(editor: Nullable<Editor>, focusing: boolean, unitId: string, subUnitId: string) {
     const lexerTreeBuilder = useDependency(LexerTreeBuilder);
     const highlightDoc = useDocHight('');
-    const change = useObservable(editor?.getDocumentDataModel()!.change$);
+    const change = useObservable(editor?.getDocumentDataModel()?.change$);
     const [sequenceNodes, setSequenceNodes] = useState<(string | ISequenceNode)[]>([]);
     const markSelectionService = useDependency(IMarkSelectionService);
     const last = useRef('');
@@ -63,7 +63,7 @@ export function useRangesHighlight(editor: Nullable<Editor>, focusing: boolean, 
         selections.forEach((selection) => {
             // selection.token;
             const range = deserializeRangeWithSheet(selection.token);
-            const workbook = univerInstanceService.getCurrentUnitForType<Workbook>(UniverInstanceType.UNIVER_SHEET);
+            const workbook = univerInstanceService.getCurrentUnitOfType<Workbook>(UniverInstanceType.UNIVER_SHEET);
             const worksheet = workbook?.getActiveSheet();
             // range is not in the current worksheet
             if ((!range.sheetName && subUnitId !== worksheet?.getSheetId()) || (range.sheetName && worksheet?.getName() !== range.sheetName)) {

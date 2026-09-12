@@ -19,7 +19,6 @@ import type {
     ISetWorksheetRowHeightMutationParams,
     ISetWorksheetRowIsAutoHeightMutationParams,
 } from '../mutations/set-worksheet-row-height.mutation';
-
 import {
     BooleanNumber,
     CommandType,
@@ -42,7 +41,7 @@ import {
 import { getSuitableRangesInView } from './util';
 import { getSheetCommandTarget } from './utils/target-util';
 
-export interface IDeltaRowHeightCommand {
+export interface IDeltaRowHeightCommandParams {
     anchorRow: number;
     deltaY: number;
 }
@@ -51,7 +50,7 @@ export const DeltaRowHeightCommand: ICommand = {
     type: CommandType.COMMAND,
     id: 'sheet.command.delta-row-height',
     // eslint-disable-next-line max-lines-per-function
-    handler: async (accessor: IAccessor, params: IDeltaRowHeightCommand) => {
+    handler: async (accessor: IAccessor, params: IDeltaRowHeightCommandParams) => {
         const selectionManagerService = accessor.get(SheetsSelectionsService);
         const selections = selectionManagerService.getCurrentSelections();
         const sheetInterceptorService = accessor.get(SheetInterceptorService);

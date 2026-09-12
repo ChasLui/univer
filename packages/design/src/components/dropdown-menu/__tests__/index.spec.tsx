@@ -14,9 +14,10 @@
  * limitations under the License.
  */
 
-import { cleanup, render } from '@testing-library/react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { cleanup, fireEvent, render } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { DropdownMenu } from '../DropdownMenu';
+import { MobileDropdownMenu } from '../MobileDropdownMenu';
 import '@testing-library/jest-dom/vitest';
 
 afterEach(cleanup);
@@ -25,14 +26,18 @@ describe('DropdownMenu', () => {
     it('should render with normal items', () => {
         const items = [
             { type: 'item' as const, children: 'Item 1' },
-            { type: 'item' as const, children: 'Item 2', disabled: true },
+            { type: 'item' as const, children: 'Item 2', disabled: true, variant: 'destructive' as const },
         ];
         const { container } = render(
-            <DropdownMenu items={items}>
+            <DropdownMenu open items={items}>
                 <button type="button">Trigger</button>
             </DropdownMenu>
         );
-        expect(container).toMatchSnapshot();
+        const trigger = container.querySelector('button');
+        expect(trigger).toBeTruthy();
+        expect(trigger).toHaveAttribute('aria-haspopup', 'menu');
+        expect(trigger).toHaveAttribute('type', 'button');
+        expect(document.querySelector('[data-variant="destructive"]')).toHaveTextContent('Item 2');
     });
 
     it('should render with separator', () => {
@@ -46,7 +51,9 @@ describe('DropdownMenu', () => {
                 <button type="button">Trigger</button>
             </DropdownMenu>
         );
-        expect(container).toMatchSnapshot();
+        const trigger = container.querySelector('button');
+        expect(trigger).toBeTruthy();
+        expect(trigger).toHaveAttribute('aria-haspopup', 'menu');
     });
 
     it('should render with subItem', () => {
@@ -65,7 +72,9 @@ describe('DropdownMenu', () => {
                 <button type="button">Trigger</button>
             </DropdownMenu>
         );
-        expect(container).toMatchSnapshot();
+        const trigger = container.querySelector('button');
+        expect(trigger).toBeTruthy();
+        expect(trigger).toHaveAttribute('aria-haspopup', 'menu');
     });
 
     it('should render with radio group', () => {
@@ -84,7 +93,9 @@ describe('DropdownMenu', () => {
                 <button type="button">Trigger</button>
             </DropdownMenu>
         );
-        expect(container).toMatchSnapshot();
+        const trigger = container.querySelector('button');
+        expect(trigger).toBeTruthy();
+        expect(trigger).toHaveAttribute('aria-haspopup', 'menu');
     });
 
     it('should render with checkbox', () => {
@@ -107,6 +118,94 @@ describe('DropdownMenu', () => {
                 <button type="button">Trigger</button>
             </DropdownMenu>
         );
-        expect(container).toMatchSnapshot();
+        const trigger = container.querySelector('button');
+        expect(trigger).toBeTruthy();
+        expect(trigger).toHaveAttribute('aria-haspopup', 'menu');
+    });
+
+    it('should render custom content without wrapping it as a menu item', () => {
+        const items = [
+            {
+                type: 'custom' as const,
+                children: <input aria-label="Insert count" defaultValue="1" />,
+            },
+        ];
+
+        const { getByLabelText } = render(
+            <DropdownMenu open items={items}>
+                <button type="button">Trigger</button>
+            </DropdownMenu>
+        );
+
+        const input = getByLabelText('Insert count');
+        expect(input).toBeInTheDocument();
+        expect(input.closest('[role="menuitem"]')).toBeNull();
+    });
+
+    it('should invoke onSelect callbacks for item/checkbox/radio', () => {
+        const onItemSelect = vi.fn();
+        const onCheckboxSelect = vi.fn();
+        const onRadioSelect = vi.fn();
+
+        const items = [
+            { type: 'item' as const, children: 'Run', onSelect: onItemSelect },
+            { type: 'checkbox' as const, value: 'c1', label: 'Check', checked: false, onSelect: onCheckboxSelect },
+            {
+                type: 'radio' as const,
+                value: 'a',
+                onSelect: onRadioSelect,
+                options: [{ label: 'A', value: 'a' }, { label: 'B', value: 'b' }],
+            },
+        ];
+
+        const { getByText } = render(
+            <DropdownMenu open items={items}>
+                <button type="button">Trigger</button>
+            </DropdownMenu>
+        );
+
+        fireEvent.click(getByText('Run'));
+        fireEvent.click(getByText('Check'));
+        fireEvent.click(getByText('B'));
+
+        expect(onItemSelect).toHaveBeenCalled();
+        expect(onCheckboxSelect).toHaveBeenCalledWith('c1');
+        expect(onRadioSelect).toHaveBeenCalledWith('b');
+    });
+
+    it('should throw when radio option misses value', () => {
+        const badItems = [
+            {
+                type: 'radio' as const,
+                value: 'a',
+                options: [{ label: 'Missing Value' }],
+            },
+        ];
+
+        expect(() =>
+            render(
+                <DropdownMenu open items={badItems}>
+                    <button type="button">Trigger</button>
+                </DropdownMenu>
+            )
+        ).toThrow('[DropdownMenu]: `value` is required');
+    });
+
+    it('should render full-width actionable rows from MobileDropdownMenu', () => {
+        const onSelect = vi.fn();
+        const { getByText } = render(
+            <MobileDropdownMenu
+                open
+                items={[{ type: 'item', children: 'Mobile item', onSelect }]}
+                onOpenChange={() => {}}
+            >
+                <button type="button">Trigger</button>
+            </MobileDropdownMenu>
+        );
+
+        const item = getByText('Mobile item');
+        expect(item).toHaveClass('univer-w-full');
+        fireEvent.click(item);
+        expect(onSelect).toHaveBeenCalledTimes(1);
     });
 });

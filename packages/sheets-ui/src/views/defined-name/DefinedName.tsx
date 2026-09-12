@@ -18,15 +18,43 @@ import type { Workbook, Worksheet } from '@univerjs/core';
 import type { IDefinedNamesServiceParam } from '@univerjs/engine-formula';
 import type { ChangeEvent, KeyboardEvent } from 'react';
 import type { IScrollToCellCommandParams } from '../../commands/commands/set-scroll.command';
-import { AbsoluteRefType, debounce, ICommandService, IUniverInstanceService, ThemeService, UniverInstanceType } from '@univerjs/core';
+import {
+    debounce,
+    generateRandomId,
+    ICommandService,
+    IUniverInstanceService,
+    ThemeService,
+    UniverInstanceType,
+} from '@univerjs/core';
 import { borderRightClassName, clsx, Dropdown } from '@univerjs/design';
-import { deserializeRangeWithSheet, IDefinedNamesService, isReferenceStringWithEffectiveColumn, LexerTreeBuilder, serializeRangeWithSheet } from '@univerjs/engine-formula';
+import {
+    deserializeRangeWithSheet,
+    IDefinedNamesService,
+    IFunctionService,
+    ISuperTableService,
+    LexerTreeBuilder,
+} from '@univerjs/engine-formula';
 import { MoreDownIcon } from '@univerjs/icons';
-import { getPrimaryForRange, SetSelectionsOperation, SetWorksheetShowCommand, SheetsSelectionsService } from '@univerjs/sheets';
-import { useDependency } from '@univerjs/ui';
-import { useEffect, useState } from 'react';
+import {
+    getPrimaryForRange,
+    InsertDefinedNameCommand,
+    SCOPE_WORKBOOK_VALUE_DEFINED_NAME,
+    SetSelectionsOperation,
+    SetWorksheetShowCommand,
+    SheetPermissionCheckController,
+    SheetsSelectionsService,
+    WorkbookEditablePermission,
+} from '@univerjs/sheets';
+import { ILayoutService, useDependency, useObservable } from '@univerjs/ui';
+import { useEffect, useRef, useState } from 'react';
+import { map, startWith } from 'rxjs';
 import { ScrollToCellCommand } from '../../commands/commands/set-scroll.command';
 import { genNormalSelectionStyle } from '../../services/selection/const';
+import {
+    DefinedNameBoxActionType,
+    getAbsoluteRefStringFromSelection,
+    resolveDefinedNameBoxAction,
+} from '../../services/utils/defined-name-utils';
 import { DefinedNameOverlay } from './DefinedNameOverlay';
 
 export function DefinedName({ disable }: { disable: boolean }) {
@@ -37,6 +65,10 @@ export function DefinedName({ disable }: { disable: boolean }) {
     const univerInstanceService = useDependency(IUniverInstanceService);
     const selectionManagerService = useDependency(SheetsSelectionsService);
     const lexerTreeBuilder = useDependency(LexerTreeBuilder);
+    const superTableService = useDependency(ISuperTableService);
+    const functionService = useDependency(IFunctionService);
+    const layoutService = useDependency(ILayoutService);
+    const sheetPermissionCheckController = useDependency(SheetPermissionCheckController);
 
     const workbook = univerInstanceService.getCurrentUnitOfType<Workbook>(UniverInstanceType.UNIVER_SHEET)!;
     const unitId = workbook?.getUnitId();
@@ -44,11 +76,12 @@ export function DefinedName({ disable }: { disable: boolean }) {
 
     const [open, setOpen] = useState(false);
     const [isInputEvent, setIsInputEvent] = useState(false);
+    const inputRef = useRef<HTMLInputElement>(null);
 
     const getDefinedNameMap = () => {
         const definedNameMap = definedNamesService.getDefinedNameMap(unitId);
         if (definedNameMap) {
-            return Array.from(Object.values(definedNameMap));
+            return Object.values(definedNameMap);
         }
 
         return [];
@@ -90,26 +123,17 @@ export function DefinedName({ disable }: { disable: boolean }) {
         });
     };
 
-    const [definedNames, setDefinedNames] = useState<IDefinedNamesServiceParam[]>(getDefinedNameMap());
-
-    useEffect(() => {
-        const definedNamesSubscription = definedNamesService.update$.subscribe(() => {
-            setDefinedNames(getDefinedNameMap());
-        });
-
-        return () => {
-            definedNamesSubscription.unsubscribe();
-        };
-    }, []);
+    const definedNames = useObservable(
+        () => definedNamesService.update$.pipe(map(getDefinedNameMap), startWith(getDefinedNameMap())),
+        getDefinedNameMap(),
+        false,
+        [definedNamesService, unitId]
+    );
 
     useEffect(() => {
         const subscription = definedNamesService.currentRange$.subscribe(() => {
             const selections = selectionManagerService.getCurrentSelections();
-            const worksheet = workbook.getActiveSheet();
-            const formulaOrRefs = selections?.map((selection) => {
-                return serializeRangeWithSheet(worksheet.getName(), selection.range);
-            })?.join(',');
-            const absoluteRef = lexerTreeBuilder.convertRefersToAbsolute(formulaOrRefs, AbsoluteRefType.ALL, AbsoluteRefType.ALL, worksheet.getName());
+            const absoluteRef = getAbsoluteRefStringFromSelection(workbook, selections, lexerTreeBuilder);
             const definedName = definedNamesService.getDefinedNameByRefString(unitId, absoluteRef);
 
             if (definedName) {
@@ -125,7 +149,7 @@ export function DefinedName({ disable }: { disable: boolean }) {
         return () => {
             subscription.unsubscribe();
         };
-    }, []); // Empty dependency array means this effect runs once on mount and clean up on unmount
+    }, [definedNamesService, lexerTreeBuilder, selectionManagerService, unitId, workbook]);
 
     const handleDefinedNamesList = debounce((value: string) => {
         const hasMatch = definedNames.find((i) => i.name.toLowerCase().includes(value.toLowerCase()));
@@ -150,19 +174,66 @@ export function DefinedName({ disable }: { disable: boolean }) {
         handleDefinedNamesList(value);
     }
 
-    // TODO: need implemented set defined name if value not referenceString
     function confirm() {
-        if (inputValue === rangeString) return;
+        const formulaOrRefString = getAbsoluteRefStringFromSelection(workbook, selectionManagerService.getCurrentSelections(), lexerTreeBuilder);
+        const action = resolveDefinedNameBoxAction({
+            inputValue,
+            rangeString,
+            unitId,
+            formulaOrRefString,
+            worksheet: workbook.getActiveSheet(),
+            univerInstanceService,
+            definedNamesService,
+            superTableService,
+            functionService,
+        });
 
-        const definedName = definedNames.find((i) => i.name === inputValue);
-        if (definedName) {
-            setRangeString(inputValue);
-            focusDefinedName(definedName);
-        } else if (isReferenceStringWithEffectiveColumn(inputValue)) {
-            setRangeString(inputValue);
-            focusSelection(inputValue);
-        } else {
-            resetValue();
+        switch (action.type) {
+            case DefinedNameBoxActionType.Noop:
+                return true;
+            case DefinedNameBoxActionType.FocusDefinedName:
+                setRangeString(action.definedName.name);
+                setInputValue(action.definedName.name);
+                focusDefinedName(action.definedName);
+                return true;
+            case DefinedNameBoxActionType.FocusSelection:
+                setRangeString(action.refString);
+                setInputValue(action.refString);
+                focusSelection(action.refString);
+                return true;
+            case DefinedNameBoxActionType.CreateDefinedName: {
+                if (
+                    !formulaOrRefString ||
+                    !sheetPermissionCheckController.permissionCheckWithoutRange(
+                        {
+                            workbookTypes: [WorkbookEditablePermission],
+                        },
+                        unitId
+                    )
+                ) {
+                    resetValue();
+                    return false;
+                }
+
+                const result = commandService.syncExecuteCommand(InsertDefinedNameCommand.id, {
+                    id: generateRandomId(10),
+                    unitId,
+                    name: action.name,
+                    formulaOrRefString,
+                    localSheetId: SCOPE_WORKBOOK_VALUE_DEFINED_NAME,
+                });
+
+                if (result) {
+                    setRangeString(action.name);
+                    setInputValue(action.name);
+                } else {
+                    resetValue();
+                }
+                return !!result;
+            }
+            case DefinedNameBoxActionType.Reset:
+                resetValue();
+                return false;
         }
     }
 
@@ -170,9 +241,12 @@ export function DefinedName({ disable }: { disable: boolean }) {
         if (disable) return;
 
         if (e.key === 'Enter') {
-            confirm();
+            const handled = confirm();
             setIsInputEvent(false);
             setOpen(false);
+            if (handled) {
+                layoutService.focus();
+            }
         } else if (e.key === 'Escape') {
             e.preventDefault();
             setIsInputEvent(false);
@@ -217,11 +291,12 @@ export function DefinedName({ disable }: { disable: boolean }) {
             `}
         >
             <input
+                ref={inputRef}
                 className={clsx(`
-                  univer-box-border univer-size-full univer-appearance-none univer-pl-1.5 univer-pr-5
-                  univer-text-gray-900
+                  univer-box-border univer-size-full univer-appearance-none univer-bg-transparent univer-pl-1.5
+                  univer-pr-5 univer-text-gray-900
                   focus:univer-outline-none
-                  dark:!univer-border-r-gray-700 dark:!univer-bg-gray-900 dark:!univer-text-white
+                  dark:!univer-border-r-gray-700 dark:!univer-text-gray-0
                 `, borderRightClassName, {
                     'univer-cursor-not-allowed': disable,
                 })}
@@ -248,7 +323,7 @@ export function DefinedName({ disable }: { disable: boolean }) {
                       univer-absolute univer-right-0 univer-top-0 univer-flex univer-h-full univer-cursor-pointer
                       univer-items-center univer-justify-center univer-px-1 univer-transition-colors univer-duration-200
                       hover:univer-bg-gray-100
-                      dark:!univer-text-white
+                      dark:!univer-text-gray-0
                       dark:hover:!univer-bg-gray-800
                     `, {
                         'univer-cursor-not-allowed univer-text-gray-300 hover:univer-bg-transparent dark:!univer-text-gray-700': disable,

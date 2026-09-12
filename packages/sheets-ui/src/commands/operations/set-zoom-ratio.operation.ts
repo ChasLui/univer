@@ -14,9 +14,9 @@
  * limitations under the License.
  */
 
+import type { IOperation } from '@univerjs/core';
 import { CommandType } from '@univerjs/core';
 import { IRenderManagerService } from '@univerjs/engine-render';
-import type { IOperation } from '@univerjs/core';
 import { SheetsZoomRenderController } from '../../controllers/render-controllers/zoom.render-controller';
 
 export interface ISetZoomRatioOperationParams {
@@ -30,7 +30,7 @@ export const SetZoomRatioOperation: IOperation<ISetZoomRatioOperationParams> = {
     type: CommandType.OPERATION,
     handler: (accessor, params: ISetZoomRatioOperationParams) => {
         const renderManagerService = accessor.get(IRenderManagerService);
-        const renderUnit = renderManagerService.getRenderById(params.unitId);
+        const renderUnit = renderManagerService.getRenderUnitById(params.unitId);
         if (!renderUnit) return false;
 
         return renderUnit.with(SheetsZoomRenderController).updateZoom(params.subUnitId, params.zoomRatio);

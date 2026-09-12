@@ -15,18 +15,42 @@
  */
 
 import type { Dependency } from '@univerjs/core';
-import type { IUniverThreadCommentConfig } from './controllers/config.schema';
-import { ICommandService, IConfigService, Inject, Injector, merge, mergeOverrideWithDependencies, Plugin, UniverInstanceType } from '@univerjs/core';
-import { AddCommentCommand, DeleteCommentCommand, DeleteCommentTreeCommand, ResolveCommentCommand, UpdateCommentCommand } from './commands/commands/comment.command';
-import { AddCommentMutation, DeleteCommentMutation, ResolveCommentMutation, UpdateCommentMutation, UpdateCommentRefMutation } from './commands/mutations/comment.mutation';
-import { defaultPluginConfig, THREAD_COMMENT_PLUGIN_CONFIG_KEY } from './controllers/config.schema';
-import { ThreadCommentResourceController } from './controllers/tc-resource.controller';
+import type { IUniverThreadCommentConfig } from './config/config';
+import {
+    ICommandService,
+    IConfigService,
+    Inject,
+    Injector,
+    merge,
+    mergeOverrideWithDependencies,
+    Plugin,
+    UniverInstanceType,
+} from '@univerjs/core';
+import pkg from '../package.json';
+import {
+    AddCommentCommand,
+    DeleteCommentCommand,
+    DeleteCommentTreeCommand,
+    ResolveCommentCommand,
+    UpdateCommentCommand,
+} from './commands/commands/comment.command';
+import {
+    AddCommentMutation,
+    DeleteCommentMutation,
+    ResolveCommentMutation,
+    UpdateCommentMutation,
+    UpdateCommentRefMutation,
+} from './commands/mutations/comment.mutation';
+import { defaultPluginConfig, THREAD_COMMENT_PLUGIN_CONFIG_KEY } from './config/config';
 import { ThreadCommentModel } from './models/thread-comment.model';
 import { IThreadCommentDataSourceService, ThreadCommentDataSourceService } from './services/tc-datasource.service';
+import { ThreadCommentFacadeService } from './services/thread-comment-api.service';
 import { TC_PLUGIN_NAME } from './types/const';
 
 export class UniverThreadCommentPlugin extends Plugin {
     static override pluginName = TC_PLUGIN_NAME;
+    static override packageName = pkg.name;
+    static override version = pkg.version;
     static override type = UniverInstanceType.UNIVER_UNKNOWN;
 
     constructor(
@@ -50,7 +74,7 @@ export class UniverThreadCommentPlugin extends Plugin {
         (mergeOverrideWithDependencies([
             [IThreadCommentDataSourceService, { useClass: ThreadCommentDataSourceService }],
             [ThreadCommentModel],
-            [ThreadCommentResourceController],
+            [ThreadCommentFacadeService],
         ], this._config?.overrides) as Dependency[]).forEach(
             (d) => {
                 this._injector.add(d);
@@ -63,7 +87,6 @@ export class UniverThreadCommentPlugin extends Plugin {
             DeleteCommentCommand,
             ResolveCommentCommand,
             DeleteCommentTreeCommand,
-
             AddCommentMutation,
             UpdateCommentMutation,
             UpdateCommentRefMutation,
@@ -72,7 +95,5 @@ export class UniverThreadCommentPlugin extends Plugin {
         ].forEach((command) => {
             this._commandService.registerCommand(command);
         });
-
-        this._injector.get(ThreadCommentResourceController);
     }
 }

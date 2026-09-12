@@ -14,11 +14,12 @@
  * limitations under the License.
  */
 
-import { DEFAULT_DATE_FORMAT, excelDateSerial, excelSerialToDate } from '../../../basics/date';
-import { ErrorType } from '../../../basics/error-type';
-import { expandArrayValueObject } from '../../../engine/utils/array-object';
 import type { ArrayValueObject } from '../../../engine/value-object/array-value-object';
 import type { BaseValueObject } from '../../../engine/value-object/base-value-object';
+import { excelDateSerial, excelSerialToDate } from '@univerjs/core';
+import { DEFAULT_DATE_FORMAT } from '../../../basics/date';
+import { ErrorType } from '../../../basics/error-type';
+import { expandArrayValueObject } from '../../../engine/utils/array-object';
 import { ErrorValueObject } from '../../../engine/value-object/base-value-object';
 import { NullValueObject, NumberValueObject } from '../../../engine/value-object/primitive-object';
 import { BaseFunction } from '../../base-function';
@@ -78,14 +79,15 @@ export class Edate extends BaseFunction {
 
             const monthsValue = Math.floor(+monthsValueObject.getValue());
 
-            const _startDate = excelSerialToDate(startDateSerial);
+            const _startDate = excelSerialToDate(startDateSerial, this.getDateSystem());
 
             const year = _startDate.getUTCFullYear();
             const month = _startDate.getUTCMonth() + monthsValue;
             const day = _startDate.getUTCDate();
 
-            const resultDate = new Date(Date.UTC(year, month, day));
-            const currentSerial = excelDateSerial(resultDate);
+            const lastDayOfTargetMonth = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
+            const resultDate = new Date(Date.UTC(year, month, Math.min(day, lastDayOfTargetMonth)));
+            const currentSerial = excelDateSerial(resultDate, this.getDateSystem());
 
             return NumberValueObject.create(currentSerial, DEFAULT_DATE_FORMAT);
         });

@@ -15,42 +15,8 @@
  */
 
 import type { IStyleData } from '../types/interfaces';
-import type { IKeyValue, Nullable } from './types';
-
-import { customAlphabet, nanoid } from 'nanoid';
+import type { Nullable } from './types';
 import { isLegalUrl, normalizeUrl, topLevelDomainSet } from '../common/url';
-
-const rmsPrefix = /^-ms-/;
-const rDashAlpha = /-([a-z])/g;
-
-const alphabets = [
-    'A',
-    'B',
-    'C',
-    'D',
-    'E',
-    'F',
-    'G',
-    'H',
-    'I',
-    'J',
-    'K',
-    'L',
-    'M',
-    'N',
-    'O',
-    'P',
-    'Q',
-    'R',
-    'S',
-    'T',
-    'U',
-    'V',
-    'W',
-    'X',
-    'Y',
-    'Z',
-];
 
 /**
  * Deep diff between two object
@@ -93,14 +59,13 @@ function diffArrays(oneArray: any[], twoArray: any[]) {
     return true;
 }
 
-function diffObject(oneObject: IKeyValue, twoObject: IKeyValue) {
+function diffObject(oneObject: Record<string, any>, twoObject: Record<string, any>) {
     const oneKeys = Object.keys(oneObject);
-    const twoKeys = Object.keys(twoObject);
-    if (oneKeys.length !== twoKeys.length) {
+    if (oneKeys.length !== Object.keys(twoObject).length) {
         return false;
     }
     for (const key of oneKeys) {
-        if (!twoKeys.includes(key)) {
+        if (!Object.prototype.propertyIsEnumerable.call(twoObject, key)) {
             return false;
         }
         const oneValue = oneObject[key];
@@ -123,37 +88,6 @@ export class Tools {
             }
         }
         return obj;
-    }
-
-    static stringAt(index: number): string {
-        let str = '';
-        let idx = index;
-        while (idx >= alphabets.length) {
-            idx /= alphabets.length;
-            idx -= 1;
-            str += alphabets[idx % alphabets.length];
-        }
-        const last = index % alphabets.length;
-        str += alphabets[last];
-        return str;
-    }
-
-    static indexAt(code: string): number {
-        let ret = 0;
-        for (let i = 0; i < code.length - 1; i += 1) {
-            const idx = code.charCodeAt(i) - 65;
-            const expoNet = code.length - 1 - i;
-            ret += alphabets.length ** expoNet + alphabets.length * idx;
-        }
-        ret += code.charCodeAt(code.length - 1) - 65;
-        return ret;
-    }
-
-    static deleteBlank(value?: string) {
-        if (Tools.isString(value)) {
-            return value.replace(/\s/g, '');
-        }
-        return value;
     }
 
     // eslint-disable-next-line complexity
@@ -237,77 +171,6 @@ export class Tools {
         return 'Unknown browser';
     }
 
-    static getClassName(instance: object): string {
-        return instance.constructor.name;
-    }
-
-    /** @deprecated This method is deprecated, please use `import { merge } from '@univerjs/core` instead */
-    static deepMerge(target: any, ...sources: any[]): any {
-        sources.forEach((item) => item && deepItem(item));
-
-        function deepArray(array: any[], to: any[]) {
-            array.forEach((value, key) => {
-                if (Tools.isArray(value)) {
-                    const origin = to[key] ?? [];
-                    to[key] = origin;
-                    deepArray(value, origin);
-                    return;
-                }
-                if (Tools.isObject(value)) {
-                    const origin = to[key] ?? {};
-                    to[key] = origin;
-                    deepObject(value, origin);
-                    return;
-                }
-                to[key] = value;
-            });
-        }
-
-        function deepObject(object: any, to: any) {
-            Object.keys(object).forEach((key) => {
-                const value = object[key];
-                if (Tools.isObject(value)) {
-                    const origin = to[key] ?? {};
-                    to[key] = origin;
-                    deepObject(value, origin);
-                    return;
-                }
-                if (Tools.isArray(value)) {
-                    const origin = to[key] ?? [];
-                    to[key] = origin;
-                    deepArray(value, origin);
-                    return;
-                }
-                to[key] = value;
-            });
-        }
-
-        function deepItem(item: any) {
-            Object.keys(item).forEach((key) => {
-                const value = item[key];
-                if (Tools.isArray(value)) {
-                    const origin = target[key] ?? [];
-                    target[key] = origin;
-                    deepArray(value, origin);
-                    return;
-                }
-                if (Tools.isObject(value)) {
-                    const origin = target[key] ?? {};
-                    target[key] = origin;
-                    deepObject(value, origin);
-                    return;
-                }
-                target[key] = value;
-            });
-        }
-
-        return target;
-    }
-
-    static numberFixed(value: number, digit: number): number {
-        return Number(Number(value).toFixed(digit));
-    }
-
     static diffValue(one: any, two: any) {
         return isValueEqual(one, two);
     }
@@ -331,23 +194,17 @@ export class Tools {
             return clone as T;
         }
         if (this.isObject(value)) {
-            const clone: IKeyValue = {};
-            Object.keys(value as IKeyValue).forEach((key) => {
-                const item = (value as IKeyValue)[key];
-                clone[key] = Tools.deepClone(item);
-            });
+            const source = value as Record<string, any>;
+            const clone: Record<string, any> = {};
+            for (const key in source) {
+                if (Object.prototype.hasOwnProperty.call(source, key)) {
+                    clone[key] = Tools.deepClone(source[key]);
+                }
+            }
             Object.setPrototypeOf(clone, Object.getPrototypeOf(value));
             return clone as T;
         }
         return value;
-    }
-
-    static getLanguage(): string {
-        const defaultValue = 'en-US';
-        if (globalThis.navigator) {
-            return (navigator.languages && navigator.languages[0]) || navigator.language || defaultValue;
-        }
-        return defaultValue;
     }
 
     static getValueType(value: any): string {
@@ -436,7 +293,7 @@ export class Tools {
      * @param obj
      * @returns
      */
-    static removeNull(value: IKeyValue): object {
+    static removeNull(value: Record<string, any>): object {
         if (this.isObject(value)) {
             Object.keys(value).forEach((key) => {
                 const item = value[key];
@@ -449,34 +306,6 @@ export class Tools {
         }
         return value;
     }
-
-    /**
-     * Generate a two-dimensional array with the specified number of rows and columns, and fill in the values
-     * @param rows row length
-     * @param columns column length
-     * @param value value to be set
-     * @returns
-     */
-    static fillTwoDimensionalArray(rows: number, columns: number, value: any): any[][] {
-        return new Array(rows).fill(value).map((item) => new Array(columns).fill(value));
-    }
-
-    /**
-     * Generate a two-dimensional array with the specified number of rows and columns, and fill in the values
-     * @param rows row length
-     * @param columns column length
-     * @param value value to be set
-     * @returns
-     */
-    // static fillObjectMatrix<T>(rows: number, columns: number, value: T): IObjectMatrixPrimitiveType<T> {
-    //     const matrix = new ObjectMatrix<T>();
-    //     for (let r = 0; r < rows; r++) {
-    //         for (let c = 0; c < columns; c++) {
-    //             matrix.setValue(r, c, value);
-    //         }
-    //     }
-    //     return matrix.getData();
-    // }
 
     static numToWord(x: number) {
         let s = '';
@@ -545,8 +374,8 @@ export class Tools {
      * @param extendJson
      * @returns
      */
-    static commonExtend<T>(originJson: IKeyValue, extendJson: IKeyValue): T {
-        const resultJsonObject: IKeyValue = {};
+    static commonExtend<T>(originJson: Record<string, any>, extendJson: Record<string, any>): T {
+        const resultJsonObject: Record<string, any> = {};
 
         for (const attr in originJson) {
             resultJsonObject[attr] = originJson[attr];
@@ -603,14 +432,6 @@ export class Tools {
     }
 }
 
-export function generateRandomId(n: number = 21, alphabet?: string): string {
-    if (alphabet) {
-        return customAlphabet(alphabet, n)();
-    }
-
-    return nanoid(n);
-}
-
 interface IStyleDataObject {
     [key: string]: unknown;
 }
@@ -641,14 +462,3 @@ export const isNodeEnv = () => {
     // eslint-disable-next-line node/prefer-global/process
     return typeof process !== 'undefined' && process.versions != null && process.versions.node != null;
 };
-
-/**
- * Converts a wildcard pattern with ? and * to a regular expression.
- * @param {string} wildChar - The wildcard string containing ? and *
- * @returns {RegExp} The generated regular expression
- */
-export function createREGEXFromWildChar(wildChar: string): RegExp {
-    const escaped = wildChar.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const regexpStr = escaped.replace(/\\\*/g, '.*').replace(/\\\?/g, '.');
-    return new RegExp(`^${regexpStr}$`, 'i');
-}

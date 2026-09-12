@@ -15,8 +15,8 @@
  */
 
 import type { Ctor, IDisposable } from '../../common/di';
-import type { UnitType } from '../../common/unit';
 import { skip } from 'rxjs';
+import pkg from '../../../package.json';
 import { Inject, Injector } from '../../common/di';
 import { UniverInstanceType } from '../../common/unit';
 import { Disposable } from '../../shared/lifecycle';
@@ -29,8 +29,10 @@ const INIT_LAZY_PLUGINS_TIMEOUT = 4;
 export const DependentOnSymbol = Symbol('DependentOn');
 
 export type PluginCtor<T extends Plugin = Plugin> = Ctor<T> & {
-    type: UnitType;
+    type: UniverInstanceType;
     pluginName: string;
+    packageName: string;
+    version: string;
     [DependentOnSymbol]?: PluginCtor[];
 };
 
@@ -39,8 +41,10 @@ export type PluginCtor<T extends Plugin = Plugin> = Ctor<T> & {
  */
 export abstract class Plugin extends Disposable {
     static pluginName: string;
+    static packageName = pkg.name;
+    static version = pkg.version;
 
-    static type: UnitType = UniverInstanceType.UNIVER_UNKNOWN;
+    static type: UniverInstanceType = UniverInstanceType.UNIVER_UNKNOWN;
 
     protected abstract _injector: Injector;
 
@@ -60,7 +64,7 @@ export abstract class Plugin extends Disposable {
         // empty
     }
 
-    getUnitType(): UnitType {
+    getUnitType(): UniverInstanceType {
         return (this.constructor as typeof Plugin).type;
     }
 
@@ -124,7 +128,7 @@ export class PluginService implements IDisposable {
     private readonly _seenPlugins = new Set<string>();
     private readonly _loadedPlugins = new Set<string>();
 
-    private readonly _loadedPluginTypes = new Set<UnitType>([UniverInstanceType.UNIVER_UNKNOWN]);
+    private readonly _loadedPluginTypes = new Set<UniverInstanceType>([UniverInstanceType.UNIVER_UNKNOWN]);
 
     constructor(
         @Inject(Injector) private readonly _injector: Injector,
@@ -160,7 +164,7 @@ export class PluginService implements IDisposable {
         }
     }
 
-    startPluginsForType(type: UnitType): void {
+    startPluginsForType(type: UniverInstanceType): void {
         if (this._loadedPluginTypes.has(type)) {
             return;
         }
@@ -168,7 +172,7 @@ export class PluginService implements IDisposable {
         this._loadPluginsForType(type);
     }
 
-    private _loadPluginsForType(type: UnitType): void {
+    private _loadPluginsForType(type: UniverInstanceType): void {
         const keys = Array.from(this._pluginRegistry.keys());
         const allPluginsOfThisType: IPluginRegistryItem[] = [];
         keys.forEach((key) => {
@@ -183,7 +187,7 @@ export class PluginService implements IDisposable {
     }
 
     private _assertPluginValid(ctor: PluginCtor<Plugin>): void {
-        const { type, pluginName } = ctor;
+        const { type, pluginName, packageName, version } = ctor;
 
         if (type === UniverInstanceType.UNRECOGNIZED) {
             throw new Error(`[PluginService]: invalid plugin type for ${ctor.name}. Please assign a "type" to your plugin.`);
@@ -193,6 +197,20 @@ export class PluginService implements IDisposable {
             throw new Error(`[PluginService]: no plugin name for ${ctor.name}. Please assign a "pluginName" to your plugin.`);
         }
 
+        if (version && version !== Plugin.version) {
+            this._logService.error(
+                '[PluginService]',
+                [
+                    'Plugin version mismatch.',
+                    `  plugin: "${pluginName || ctor.name}"`,
+                    `  package: "${packageName}"`,
+                    `  plugin version: "${version}"`,
+                    `  core version: "${Plugin.version}"`,
+                    '  registration will continue, but please make sure all @univerjs packages use the same version.',
+                ].join('\n')
+            );
+        }
+
         if (this._seenPlugins.has(pluginName)) {
             throw new Error(`[PluginService]: duplicated plugin name for "${pluginName}". Maybe a plugin that dependents on "${pluginName} has already registered it. In that case please register "${pluginName}" before the that plugin.`);
         }
@@ -200,8 +218,8 @@ export class PluginService implements IDisposable {
         this._seenPlugins.add(ctor.pluginName);
     }
 
-    private _flushTimerByType = new Map<UnitType, number>();
-    private _flushType(type: UnitType): void {
+    private _flushTimerByType = new Map<UniverInstanceType, number>();
+    private _flushType(type: UniverInstanceType): void {
         if (this._flushTimerByType.get(type) === undefined) {
             this._flushTimerByType.set(type, setTimeout(() => {
                 this._loadPluginsForType(type);

@@ -35,16 +35,17 @@ export interface ISaveCellImagesOptions {
     useColumnIndex?: number;
 }
 
-export interface IFRangeSheetDrawingMixin {
+export interface IFRangeSheetsDrawingUIMixin {
     /**
      * Inserts an image into the current cell.
      *
      * @param {string | File} file File or URL string
-     * @returns True if the image is inserted successfully, otherwise false
+     * @returns {Promise<boolean>} True if the image is inserted successfully, otherwise false
      * @example
      * ```ts
      * const fWorkbook = univerAPI.getActiveWorkbook();
-     * const fWorksheet = fWorkbook.getActiveSheet();
+     * const fWorksheet = fWorkbook.getSheetByName('Sheet1');
+     * if (!fWorksheet) return;
      *
      * // Insert an image into the cell A10
      * const fRange = fWorksheet.getRange('A10');
@@ -63,7 +64,8 @@ export interface IFRangeSheetDrawingMixin {
      * @example
      * ```ts
      * const fWorkbook = univerAPI.getActiveWorkbook();
-     * const fWorksheet = fWorkbook.getActiveSheet();
+     * const fWorksheet = fWorkbook.getSheetByName('Sheet1');
+     * if (!fWorksheet) return;
      *
      * // Save all cell images in range A1:D10
      * const fRange = fWorksheet.getRange('A1:D10');
@@ -81,7 +83,7 @@ export interface IFRangeSheetDrawingMixin {
     saveCellImagesAsync(options?: ISaveCellImagesOptions): Promise<boolean>;
 }
 
-export class FRangeSheetDrawingUI extends FRange implements IFRangeSheetDrawingMixin {
+export class FRangeSheetsDrawingUIMixin extends FRange implements IFRangeSheetsDrawingUIMixin {
     override async insertCellImageAsync(file: File | string): Promise<boolean> {
         const renderManagerService = this._injector.get(IRenderManagerService);
         const controller = getCurrentTypeOfRenderer(UniverInstanceType.UNIVER_SHEET, this._injector.get(IUniverInstanceService), renderManagerService)
@@ -157,8 +159,7 @@ export class FRangeSheetDrawingUI extends FRange implements IFRangeSheetDrawingM
     }
 }
 
-FRange.extend(FRangeSheetDrawingUI);
+FRange.extend(FRangeSheetsDrawingUIMixin);
 declare module '@univerjs/sheets/facade' {
-    // eslint-disable-next-line ts/naming-convention
-    interface FRange extends IFRangeSheetDrawingMixin { }
+    interface FRange extends IFRangeSheetsDrawingUIMixin { }
 }

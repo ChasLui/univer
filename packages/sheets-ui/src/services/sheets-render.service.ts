@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import type { IDisposable, Workbook } from '@univerjs/core';
+import type { ICreateUnitOptions, IDisposable, Workbook } from '@univerjs/core';
 import {
     IContextService,
     Inject,
@@ -77,24 +77,25 @@ export class SheetsRenderService extends RxDisposable {
     private _initWorkbookListener(): void {
         this._instanceSrv.getTypeOfUnitAdded$<Workbook>(UniverInstanceType.UNIVER_SHEET)
             .pipe(takeUntil(this.dispose$))
-            .subscribe((workbook) => this._createRenderer(workbook));
+            .subscribe((event) => this._createRenderer(event.unit, event.options));
         this._instanceSrv.getAllUnitsForType<Workbook>(UniverInstanceType.UNIVER_SHEET)
-            .forEach((workbook) => this._createRenderer(workbook));
+            .forEach((workbook) => this._createRenderer(workbook, this._instanceSrv.getUnitCreateOptions(workbook.getUnitId()) ?? undefined));
         this._instanceSrv.getTypeOfUnitDisposed$<Workbook>(UniverInstanceType.UNIVER_SHEET)
             .pipe(takeUntil(this.dispose$))
             .subscribe((workbook) => this._disposeRenderer(workbook));
     }
 
-    private _createRenderer(workbook: Workbook): void {
-        const unitId = workbook.getUnitId();
-        this._renderManagerService.created$.subscribe((renderer) => {
-            if (renderer.unitId === unitId) {
-                renderer.engine.getCanvas().setId(`${SHEET_MAIN_CANVAS_ID}_${unitId}`);
-                renderer.engine.getCanvas().getContext().setId(`${SHEET_MAIN_CANVAS_ID}_${unitId}`);
-            }
-        });
+    private _createRenderer(workbook: Workbook, createUnitOptions?: ICreateUnitOptions): void {
+        if (createUnitOptions?.skipAutoRender) {
+            return;
+        }
 
-        this._renderManagerService.createRender(unitId);
+        const unitId = workbook.getUnitId();
+        const renderer = this._renderManagerService.createRender(unitId, createUnitOptions);
+        const canvas = renderer.engine.getCanvas();
+        canvas.setId(`${SHEET_MAIN_CANVAS_ID}_${unitId}`);
+        canvas.getCanvasEle().dataset.uUnitId = unitId;
+        canvas.getContext().setId(`${SHEET_MAIN_CANVAS_ID}_${unitId}`);
     }
 
     private _disposeRenderer(workbook: Workbook): void {

@@ -19,7 +19,7 @@ import { ErrorType } from '../../../../basics/error-type';
 import { ArrayValueObject, transformToValueObject } from '../../../../engine/value-object/array-value-object';
 import { ErrorValueObject } from '../../../../engine/value-object/base-value-object';
 import { BooleanValueObject, NullValueObject, NumberValueObject, StringValueObject } from '../../../../engine/value-object/primitive-object';
-import { getObjectValue } from '../../../__tests__/create-function-test-bed';
+import { getObjectValue } from '../../../util';
 import { FUNCTION_NAMES_STATISTICAL } from '../../function-names';
 import { PercentileInc } from '../index';
 
@@ -90,6 +90,9 @@ describe('Test percentileInc function', () => {
             });
             const result2 = testFunction.calculate(array2, k);
             expect(getObjectValue(result2)).toBe(ErrorType.NUM);
+
+            const result3 = testFunction.calculate(BooleanValueObject.create(false), k);
+            expect(getObjectValue(result3)).toBe(0);
         });
 
         it('K value test', () => {

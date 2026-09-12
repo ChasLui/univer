@@ -16,11 +16,24 @@
 
 import type { IRange, Workbook } from '@univerjs/core';
 import type { IRangeProtectionRule } from '@univerjs/sheets';
+import type { LocaleKey } from '../../../locale/types';
 import type { IPermissionPanelRule } from '../../../services/permission/sheet-permission-panel.model';
-import { IAuthzIoService, ICommandService, IUniverInstanceService, LocaleService, UniverInstanceType } from '@univerjs/core';
-import { Button } from '@univerjs/design';
-import { ObjectScope, UnitAction, UnitRole } from '@univerjs/protocol';
-import { AddRangeProtectionCommand, AddWorksheetProtectionCommand, EditStateEnum, SetProtectionCommand, UnitObject, ViewStateEnum } from '@univerjs/sheets';
+import {
+    IAuthzIoService,
+    ICommandService,
+    IUniverInstanceService,
+    LocaleService,
+    UniverInstanceType,
+} from '@univerjs/core';
+import { ActionRow, Button } from '@univerjs/design';
+import { ObjectScope, UnitAction, UnitObject, UnitRole } from '@univerjs/protocol';
+import {
+    AddRangeProtectionCommand,
+    AddWorksheetProtectionCommand,
+    EditStateEnum,
+    SetProtectionCommand,
+    ViewStateEnum,
+} from '@univerjs/sheets';
 import { ISidebarService, useDependency } from '@univerjs/ui';
 import { getUserListEqual } from '../../../common/utils';
 import { UNIVER_SHEET_PERMISSION_PANEL } from '../../../consts/permission';
@@ -37,10 +50,11 @@ interface IPermissionDetailFooterPartProps {
     editState: EditStateEnum;
     viewState: ViewStateEnum;
     oldRule?: IPermissionPanelRule;
+    ActionRowComponent?: typeof ActionRow;
 }
 
 export const PermissionDetailFooterPart = (props: IPermissionDetailFooterPartProps) => {
-    const { viewState, editState, permissionId, ranges, rangesErrMsg, desc, oldRule, id } = props;
+    const { viewState, editState, permissionId, ranges, rangesErrMsg, desc, oldRule, id, ActionRowComponent = ActionRow } = props;
     const sheetPermissionPanelModel = useDependency(SheetPermissionPanelModel);
     const sidebarService = useDependency(ISidebarService);
     const authzIoService = useDependency(IAuthzIoService);
@@ -49,7 +63,7 @@ export const PermissionDetailFooterPart = (props: IPermissionDetailFooterPartPro
     const sheetPermissionUserManagerService = useDependency(SheetPermissionUserManagerService);
     const univerInstanceService = useDependency(IUniverInstanceService);
 
-    const workbook = univerInstanceService.getCurrentUnitForType<Workbook>(UniverInstanceType.UNIVER_SHEET);
+    const workbook = univerInstanceService.getCurrentUnitOfType<Workbook>(UniverInstanceType.UNIVER_SHEET);
     const worksheet = workbook?.getActiveSheet();
     if (!workbook || !worksheet) {
         return null;
@@ -58,7 +72,9 @@ export const PermissionDetailFooterPart = (props: IPermissionDetailFooterPartPro
     const subUnitId = worksheet.getSheetId();
 
     return (
-        <div className="univer-mt-auto univer-flex univer-flex-row-reverse univer-gap-2 univer-py-5">
+        <ActionRowComponent
+            className="univer-mt-auto univer-flex univer-flex-row-reverse univer-gap-2 univer-py-5"
+        >
             <Button
                 variant="primary"
                 onClick={async () => {
@@ -83,17 +99,22 @@ export const PermissionDetailFooterPart = (props: IPermissionDetailFooterPartPro
                     }
 
                     let collaborators = sheetPermissionUserManagerService.selectUserList;
-                    if (activeRule.editState === EditStateEnum.OnlyMe) {
-                        collaborators = [];
-                        sheetPermissionUserManagerService.setSelectUserList([]);
-                    }
+
                     const scopeObj = {
                         read: activeRule.viewState === ViewStateEnum.OthersCanView ? ObjectScope.AllCollaborator : ObjectScope.SomeCollaborator,
                         edit: activeRule.editState === EditStateEnum.DesignedUserCanEdit ? ObjectScope.SomeCollaborator : ObjectScope.OneSelf,
                     };
-                    if (activeRule.editState === EditStateEnum.DesignedUserCanEdit && collaborators.length === 0) {
+
+                    if (activeRule.editState === EditStateEnum.OnlyMe) {
                         collaborators = [];
-                        scopeObj.edit = ObjectScope.OneSelf;
+                        sheetPermissionUserManagerService.setSelectUserList([]);
+                    } else if (activeRule.editState === EditStateEnum.DesignedUserCanEdit) {
+                        if (collaborators.length === 0) {
+                            collaborators = [];
+                            scopeObj.edit = ObjectScope.OneSelf;
+                        } else {
+                            collaborators = collaborators.map((user) => ({ ...user, role: UnitRole.Editor }));
+                        }
                     }
 
                     // Editing existing permission rules
@@ -194,7 +215,7 @@ export const PermissionDetailFooterPart = (props: IPermissionDetailFooterPartPro
                         }
                     }
                     const sidebarProps = {
-                        header: { title: `${localeService.t('permission.panel.title')}` },
+                        header: { title: `${localeService.t<LocaleKey>('sheets-ui.permission.panel.title')}` },
                         children: {
                             label: UNIVER_SHEET_PERMISSION_PANEL,
                             showDetail: false,
@@ -204,7 +225,7 @@ export const PermissionDetailFooterPart = (props: IPermissionDetailFooterPartPro
                     sidebarService.open(sidebarProps);
                 }}
             >
-                {localeService.t('permission.button.confirm')}
+                {localeService.t<LocaleKey>('sheets-ui.permission.button.confirm')}
             </Button>
             <Button
                 onClick={() => {
@@ -213,8 +234,8 @@ export const PermissionDetailFooterPart = (props: IPermissionDetailFooterPartPro
                     sidebarService.close();
                 }}
             >
-                {localeService.t('permission.button.cancel')}
+                {localeService.t<LocaleKey>('sheets-ui.permission.button.cancel')}
             </Button>
-        </div>
+        </ActionRowComponent>
     );
 };

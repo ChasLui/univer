@@ -14,17 +14,12 @@
  * limitations under the License.
  */
 
-import type { IPageElement, Nullable } from '@univerjs/core';
-import type {
-    BaseObject,
-    IRenderModule,
-} from '@univerjs/engine-render';
+import type { Nullable } from '@univerjs/core';
+import type { BaseObject, IRenderModule } from '@univerjs/engine-render';
+import type { IPageElement } from '@univerjs/slides';
 import type { PageID } from '../type';
 import { RxDisposable } from '@univerjs/core';
-
-import {
-    IRenderManagerService,
-} from '@univerjs/engine-render';
+import { IRenderManagerService } from '@univerjs/engine-render';
 import { SlideRenderController } from './slide.render-controller';
 
 export class CanvasView extends RxDisposable implements IRenderModule {
@@ -39,7 +34,7 @@ export class CanvasView extends RxDisposable implements IRenderModule {
 
     private _getSlideRenderControllerFromRenderUnit(unitId: string) {
         const renderUnit = this._renderManagerService
-            .getRenderById(unitId)!;
+            .getRenderUnitById(unitId)!;
         const slideRC = renderUnit.with(SlideRenderController);
         return slideRC;
     }

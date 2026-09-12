@@ -14,10 +14,10 @@
  * limitations under the License.
  */
 
-import { getDateSerialNumberByObject } from '../../../basics/date';
-import { expandArrayValueObject } from '../../../engine/utils/array-object';
 import type { ArrayValueObject } from '../../../engine/value-object/array-value-object';
 import type { BaseValueObject } from '../../../engine/value-object/base-value-object';
+import { getDateSerialNumberByObject } from '../../../basics/date';
+import { expandArrayValueObject } from '../../../engine/utils/array-object';
 import { NumberValueObject } from '../../../engine/value-object/primitive-object';
 import { BaseFunction } from '../../base-function';
 
@@ -59,13 +59,13 @@ export class Days extends BaseFunction {
                 return startDateObject;
             }
 
-            const endDateSerialNumber = getDateSerialNumberByObject(endDateObject);
+            const endDateSerialNumber = getDateSerialNumberByObject(endDateObject, this.getDateSystem());
 
             if (typeof endDateSerialNumber !== 'number') {
                 return endDateSerialNumber;
             }
 
-            const startDateSerialNumber = getDateSerialNumberByObject(startDateObject);
+            const startDateSerialNumber = getDateSerialNumberByObject(startDateObject, this.getDateSystem());
 
             if (typeof startDateSerialNumber !== 'number') {
                 return startDateSerialNumber;

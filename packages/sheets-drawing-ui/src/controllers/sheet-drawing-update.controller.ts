@@ -14,27 +14,70 @@
  * limitations under the License.
  */
 
-import type { IAccessor, IRange, Nullable, Workbook } from '@univerjs/core';
-import type { IImageData, IImageIoServiceParam } from '@univerjs/drawing';
-import type { IRenderContext, IRenderModule } from '@univerjs/engine-render';
+import type { IAccessor, IDrawingParam, IImageIoServiceParam, IRange, Nullable, Workbook } from '@univerjs/core';
+import type { IImageData } from '@univerjs/drawing';
+import type { IRenderContext, IRenderModule, SpreadsheetSkeleton } from '@univerjs/engine-render';
 import type { ISheetLocationBase, WorkbookSelectionModel } from '@univerjs/sheets';
-import type { ISheetDrawing, ISheetDrawingPosition } from '@univerjs/sheets-drawing';
-import type { IInsertDrawingCommandParams, ISetDrawingCommandParams } from '../commands/commands/interfaces';
-import type { ISetDrawingArrangeCommandParams } from '../commands/commands/set-drawing-arrange.command';
-import { BooleanNumber, BuildTextUtils, createDocumentModelWithStyle, Disposable, DrawingTypeEnum, FOCUSING_COMMON_DRAWINGS, generateRandomId, ICommandService, IContextService, ImageSourceType, Inject, Injector, IURLImageService, LocaleService, ObjectRelativeFromH, ObjectRelativeFromV, PositionedObjectLayoutType, WrapTextType } from '@univerjs/core';
+import type {
+    IInsertSheetDrawingCommandParams,
+    ISetDrawingArrangeCommandParams,
+    ISetDrawingCommandParams,
+    ISheetDrawing,
+    ISheetDrawingPosition,
+} from '@univerjs/sheets-drawing';
+import type { LocaleKey } from '../locale/types';
+import {
+    BooleanNumber,
+    BuildTextUtils,
+    createDocumentModelWithStyle,
+    Disposable,
+    DrawingTypeEnum,
+    FOCUSING_COMMON_DRAWINGS,
+    generateRandomId,
+    ICommandService,
+    IContextService,
+    IImageIoService,
+    ImageSourceType,
+    ImageUploadStatusType,
+    Inject,
+    Injector,
+    IURLImageService,
+    LocaleService,
+    PositionedObjectLayoutType,
+    WrapTextType,
+} from '@univerjs/core';
 import { MessageType } from '@univerjs/design';
-import { docDrawingPositionToTransform } from '@univerjs/docs-ui';
-import { DRAWING_IMAGE_ALLOW_IMAGE_LIST, DRAWING_IMAGE_ALLOW_SIZE, DRAWING_IMAGE_COUNT_LIMIT, DRAWING_IMAGE_HEIGHT_LIMIT, DRAWING_IMAGE_WIDTH_LIMIT, getImageSize, IDrawingManagerService, IImageIoService, ImageUploadStatusType, SetDrawingSelectedOperation } from '@univerjs/drawing';
+import { buildDocTransform, docDrawingPositionToTransform } from '@univerjs/docs';
+import {
+    DRAWING_IMAGE_ALLOW_IMAGE_LIST,
+    DRAWING_IMAGE_COUNT_LIMIT,
+    DRAWING_IMAGE_HEIGHT_LIMIT,
+    DRAWING_IMAGE_WIDTH_LIMIT,
+    getDrawingImageAllowSize,
+    getImageSize,
+    IDrawingManagerService,
+    SetDrawingSelectedOperation,
+} from '@univerjs/drawing';
 import { IRenderManagerService } from '@univerjs/engine-render';
-import { SetRangeValuesCommand, SheetsSelectionsService } from '@univerjs/sheets';
-import { ISheetDrawingService } from '@univerjs/sheets-drawing';
-import { attachRangeWithCoord, ISheetSelectionRenderService, SheetSkeletonManagerService } from '@univerjs/sheets-ui';
+import {
+    attachRangeWithCoord,
+    SetRangeValuesCommand,
+    SheetInterceptorService,
+    SheetSkeletonService,
+    SheetsSelectionsService,
+} from '@univerjs/sheets';
+import {
+    drawingPositionToTransform,
+    InsertSheetDrawingCommand,
+    ISheetDrawingService,
+    SetDrawingArrangeCommand,
+    SetSheetDrawingCommand,
+    transformToAxisAlignPosition,
+    transformToDrawingPosition,
+} from '@univerjs/sheets-drawing';
+import { ISheetSelectionRenderService, SheetSkeletonManagerService } from '@univerjs/sheets-ui';
 import { ILocalFileService, IMessageService } from '@univerjs/ui';
-import { drawingPositionToTransform, transformToDrawingPosition } from '../basics/transform-position';
 import { GroupSheetDrawingCommand } from '../commands/commands/group-sheet-drawing.command';
-import { InsertSheetDrawingCommand } from '../commands/commands/insert-sheet-drawing.command';
-import { SetDrawingArrangeCommand } from '../commands/commands/set-drawing-arrange.command';
-import { SetSheetDrawingCommand } from '../commands/commands/set-sheet-drawing.command';
 import { UngroupSheetDrawingCommand } from '../commands/commands/ungroup-sheet-drawing.command';
 
 /**
@@ -69,7 +112,7 @@ export function getDrawingSizeByCell(
 ) {
     const { rotatedHeight, rotatedWidth } = rotatedBoundingBox(originImageWidth, originImageHeight, angle);
     const renderManagerService = accessor.get(IRenderManagerService);
-    const currentRender = renderManagerService.getRenderById(location.unitId);
+    const currentRender = renderManagerService.getRenderUnitById(location.unitId);
     if (!currentRender) {
         return false;
     }
@@ -78,7 +121,7 @@ export function getDrawingSizeByCell(
     if (skeleton == null) {
         return false;
     }
-    const cellInfo = skeleton.getCellByIndex(location.row, location.col);
+    const cellInfo = skeleton.getCellWithCoordByIndex(location.row, location.col);
 
     const cellWidth = cellInfo.mergeInfo.endX - cellInfo.mergeInfo.startX - 2;
     const cellHeight = cellInfo.mergeInfo.endY - cellInfo.mergeInfo.startY - 2;
@@ -97,8 +140,8 @@ export class SheetDrawingUpdateController extends Disposable implements IRenderM
     private readonly _workbookSelections: WorkbookSelectionModel;
     constructor(
         private readonly _context: IRenderContext<Workbook>,
-        @Inject(SheetSkeletonManagerService) private readonly _skeletonManagerService: SheetSkeletonManagerService,
         @ICommandService private readonly _commandService: ICommandService,
+        @Inject(SheetInterceptorService) private readonly _sheetInterceptorService: SheetInterceptorService,
         @ISheetSelectionRenderService private readonly _selectionRenderService: ISheetSelectionRenderService,
         @IImageIoService private readonly _imageIoService: IImageIoService,
         @ILocalFileService private readonly _fileOpenerService: ILocalFileService,
@@ -108,6 +151,7 @@ export class SheetDrawingUpdateController extends Disposable implements IRenderM
         @IMessageService private readonly _messageService: IMessageService,
         @Inject(LocaleService) private readonly _localeService: LocaleService,
         @Inject(SheetsSelectionsService) selectionManagerService: SheetsSelectionsService,
+        @Inject(SheetSkeletonService) private readonly _sheetSkeletonService: SheetSkeletonService,
         @Inject(Injector) private readonly _injector: Injector,
         @IURLImageService private readonly _urlImageService: IURLImageService
     ) {
@@ -115,7 +159,7 @@ export class SheetDrawingUpdateController extends Disposable implements IRenderM
 
         this._workbookSelections = selectionManagerService.getWorkbookSelections(this._context.unitId);
 
-        this._updateImageListener();
+        this._updateDrawingListener();
         this._updateOrderListener();
         this._groupDrawingListener();
         this._focusDrawingListener();
@@ -131,7 +175,7 @@ export class SheetDrawingUpdateController extends Disposable implements IRenderM
         if (fileLength > DRAWING_IMAGE_COUNT_LIMIT) {
             this._messageService.show({
                 type: MessageType.Error,
-                content: this._localeService.t('update-status.exceedMaxCount', String(DRAWING_IMAGE_COUNT_LIMIT)),
+                content: this._localeService.t<LocaleKey>('sheets-drawing-ui.update-status.exceedMaxCount', String(DRAWING_IMAGE_COUNT_LIMIT)),
             });
             return false;
         } else if (fileLength === 0) {
@@ -169,17 +213,17 @@ export class SheetDrawingUpdateController extends Disposable implements IRenderM
             if (type === ImageUploadStatusType.ERROR_EXCEED_SIZE) {
                 this._messageService.show({
                     type: MessageType.Error,
-                    content: this._localeService.t('update-status.exceedMaxSize', String(DRAWING_IMAGE_ALLOW_SIZE / (1024 * 1024))),
+                    content: this._localeService.t<LocaleKey>('sheets-drawing-ui.update-status.exceedMaxSize', String(getDrawingImageAllowSize() / (1024 * 1024))),
                 });
             } else if (type === ImageUploadStatusType.ERROR_IMAGE_TYPE) {
                 this._messageService.show({
                     type: MessageType.Error,
-                    content: this._localeService.t('update-status.invalidImageType'),
+                    content: this._localeService.t<LocaleKey>('sheets-drawing-ui.update-status.invalidImageType'),
                 });
             } else if (type === ImageUploadStatusType.ERROR_IMAGE) {
                 this._messageService.show({
                     type: MessageType.Error,
-                    content: this._localeService.t('update-status.invalidImage'),
+                    content: this._localeService.t<LocaleKey>('sheets-drawing-ui.update-status.invalidImage'),
                 });
             }
         }
@@ -203,11 +247,15 @@ export class SheetDrawingUpdateController extends Disposable implements IRenderM
             scale = Math.max(scaleWidth, scaleHeight);
         }
 
-        const sheetTransform = this._getImagePosition(width * scale, height * scale, sceneWidth, sceneHeight);
+        const sheetSkeletonParam = this._sheetSkeletonService.getSkeletonParam(unitId, subUnitId);
+        if (!sheetSkeletonParam) return;
 
-        if (sheetTransform == null) {
-            return;
-        }
+        const { skeleton } = sheetSkeletonParam;
+        const sheetTransform = this._getImagePosition(width * scale, height * scale, sceneWidth, sceneHeight, skeleton);
+        if (!sheetTransform) return;
+
+        const newTransform = drawingPositionToTransform(sheetTransform, sheetSkeletonParam);
+        if (!newTransform) return;
 
         const sheetDrawingParam: ISheetDrawing = {
             unitId,
@@ -216,14 +264,15 @@ export class SheetDrawingUpdateController extends Disposable implements IRenderM
             drawingType: DrawingTypeEnum.DRAWING_IMAGE,
             imageSourceType,
             source,
-            transform: drawingPositionToTransform(sheetTransform, this._selectionRenderService, this._skeletonManagerService),
+            transform: newTransform,
             sheetTransform,
+            axisAlignSheetTransform: transformToAxisAlignPosition(newTransform, skeleton) ?? sheetTransform,
         };
 
-        return this._commandService.executeCommand(InsertSheetDrawingCommand.id, {
+        return this._commandService.executeCommand<IInsertSheetDrawingCommandParams>(InsertSheetDrawingCommand.id, {
             unitId,
             drawings: [sheetDrawingParam],
-        } as IInsertDrawingCommandParams);
+        });
     }
 
     // eslint-disable-next-line max-lines-per-function
@@ -236,17 +285,17 @@ export class SheetDrawingUpdateController extends Disposable implements IRenderM
             if (type === ImageUploadStatusType.ERROR_EXCEED_SIZE) {
                 this._messageService.show({
                     type: MessageType.Error,
-                    content: this._localeService.t('update-status.exceedMaxSize', String(DRAWING_IMAGE_ALLOW_SIZE / (1024 * 1024))),
+                    content: this._localeService.t<LocaleKey>('sheets-drawing-ui.update-status.exceedMaxSize', String(getDrawingImageAllowSize() / (1024 * 1024))),
                 });
             } else if (type === ImageUploadStatusType.ERROR_IMAGE_TYPE) {
                 this._messageService.show({
                     type: MessageType.Error,
-                    content: this._localeService.t('update-status.invalidImageType'),
+                    content: this._localeService.t<LocaleKey>('sheets-drawing-ui.update-status.invalidImageType'),
                 });
             } else if (type === ImageUploadStatusType.ERROR_IMAGE) {
                 this._messageService.show({
                     type: MessageType.Error,
-                    content: this._localeService.t('update-status.invalidImage'),
+                    content: this._localeService.t<LocaleKey>('sheets-drawing-ui.update-status.invalidImage'),
                 });
             }
         }
@@ -287,21 +336,7 @@ export class SheetDrawingUpdateController extends Disposable implements IRenderM
         if (!imageSize) {
             return false;
         }
-        const docTransform = {
-            size: {
-                width: imageSize.width,
-                height: imageSize.height,
-            },
-            positionH: {
-                relativeFrom: ObjectRelativeFromH.PAGE,
-                posOffset: 0,
-            },
-            positionV: {
-                relativeFrom: ObjectRelativeFromV.PARAGRAPH,
-                posOffset: 0,
-            },
-            angle: 0,
-        };
+        const docTransform = buildDocTransform(imageSize.width, imageSize.height);
         const docDrawingParam = {
             unitId: docDataModel.getUnitId(),
             subUnitId: docDataModel.getUnitId(),
@@ -352,7 +387,6 @@ export class SheetDrawingUpdateController extends Disposable implements IRenderM
         return false;
     }
 
-    // eslint-disable-next-line max-lines-per-function
     async insertCellImageByUrl(url: string, location?: ISheetLocationBase) {
         let src = url;
         try {
@@ -383,21 +417,7 @@ export class SheetDrawingUpdateController extends Disposable implements IRenderM
         if (!imageSize) {
             return false;
         }
-        const docTransform = {
-            size: {
-                width: imageSize.width,
-                height: imageSize.height,
-            },
-            positionH: {
-                relativeFrom: ObjectRelativeFromH.PAGE,
-                posOffset: 0,
-            },
-            positionV: {
-                relativeFrom: ObjectRelativeFromV.PARAGRAPH,
-                posOffset: 0,
-            },
-            angle: 0,
-        };
+        const docTransform = buildDocTransform(imageSize.width, imageSize.height);
         const docDrawingParam = {
             unitId: docDataModel.getUnitId(),
             subUnitId: docDataModel.getUnitId(),
@@ -459,7 +479,7 @@ export class SheetDrawingUpdateController extends Disposable implements IRenderM
         };
     }
 
-    private _getImagePosition(imageWidth: number, imageHeight: number, sceneWidth: number, sceneHeight: number): Nullable<ISheetDrawingPosition> {
+    private _getImagePosition(imageWidth: number, imageHeight: number, sceneWidth: number, sceneHeight: number, skeleton: SpreadsheetSkeleton): Nullable<ISheetDrawingPosition> {
         const selections = this._workbookSelections.getCurrentSelections();
         let range: IRange = {
             startRow: 0,
@@ -471,7 +491,7 @@ export class SheetDrawingUpdateController extends Disposable implements IRenderM
             range = selections[selections.length - 1].range;
         }
 
-        const rangeWithCoord = attachRangeWithCoord(this._skeletonManagerService.getCurrent()!.skeleton, range);
+        const rangeWithCoord = attachRangeWithCoord(skeleton, range);
         if (rangeWithCoord == null) {
             return;
         }
@@ -551,7 +571,7 @@ export class SheetDrawingUpdateController extends Disposable implements IRenderM
         }));
     }
 
-    private _updateImageListener() {
+    private _updateDrawingListener() {
         this.disposeWithMe(this._drawingManagerService.featurePluginUpdate$.subscribe((params) => {
             const drawings: Partial<ISheetDrawing>[] = [];
 
@@ -560,33 +580,30 @@ export class SheetDrawingUpdateController extends Disposable implements IRenderM
             }
 
             (params as IImageData[]).forEach((param) => {
-                const { unitId, subUnitId, drawingId, drawingType, transform } = param;
-                if (transform == null) {
+                const { unitId, subUnitId, drawingId, transform } = param;
+                const sheetSkeletonParam = this._sheetSkeletonService.getSkeletonParam(unitId, subUnitId);
+                if (!transform || !sheetSkeletonParam) {
                     return;
                 }
 
+                const { skeleton } = sheetSkeletonParam;
                 const sheetDrawing = this._sheetDrawingService.getDrawingByParam({ unitId, subUnitId, drawingId });
-
-                // const imageDrawing = this._drawingManagerService.getDrawingByParam({ unitId, subUnitId, drawingId });
-
                 if (sheetDrawing == null || sheetDrawing.unitId !== this._context.unitId) {
                     return;
                 }
 
-                const sheetTransform = transformToDrawingPosition({ ...sheetDrawing.transform, ...transform }, this._selectionRenderService);
+                const sheetTransform = transformToDrawingPosition({ ...sheetDrawing.transform, ...transform }, skeleton);
+                const axisAlignSheetTransform = transformToAxisAlignPosition({ ...sheetDrawing.transform, ...transform }, skeleton);
 
-                if (sheetTransform == null) {
+                if (sheetTransform == null || axisAlignSheetTransform == null) {
                     return;
                 }
 
-                // const oldDrawing: Partial<ISheetDrawing> = {
-                //     ...sheetDrawing,
-                // };
-
                 const newDrawing: Partial<ISheetDrawing> = {
                     ...param,
-                    transform: { ...sheetDrawing.transform, ...transform, ...drawingPositionToTransform(sheetTransform, this._selectionRenderService, this._skeletonManagerService) },
+                    transform: { ...sheetDrawing.transform, ...transform, ...drawingPositionToTransform(sheetTransform, sheetSkeletonParam) },
                     sheetTransform: { ...sheetTransform },
+                    axisAlignSheetTransform: { ...axisAlignSheetTransform },
                 };
 
                 drawings.push(newDrawing);
@@ -601,15 +618,91 @@ export class SheetDrawingUpdateController extends Disposable implements IRenderM
         }));
     }
 
+    private _getSheetTransformByParam(param: IDrawingParam, isCreate: boolean): Nullable<{
+        sheetTransform: ISheetDrawingPosition;
+        axisAlignSheetTransform: ISheetDrawingPosition;
+    }> {
+        const { unitId, subUnitId, drawingId, transform } = param;
+        const skeleton = this._sheetSkeletonService.getSkeleton(unitId, subUnitId);
+        if (!transform || !skeleton) {
+            return null;
+        }
+
+        const sheetDrawing = this._sheetDrawingService.getDrawingByParam({ unitId, subUnitId, drawingId });
+
+        let sheetDrawingTransform = sheetDrawing?.transform;
+        if (isCreate) {
+            sheetDrawingTransform = {};
+        }
+
+        if (!isCreate && (!sheetDrawing || sheetDrawing.unitId !== this._context.unitId)) {
+            return null;
+        }
+
+        const sheetTransform = transformToDrawingPosition({ ...sheetDrawingTransform, ...transform }, skeleton);
+        const axisAlignSheetTransform = transformToAxisAlignPosition({ ...sheetDrawingTransform, ...transform }, skeleton);
+
+        if (!sheetTransform || !axisAlignSheetTransform) {
+            return null;
+        }
+
+        return { sheetTransform, axisAlignSheetTransform };
+    }
+
     private _groupDrawingListener() {
         this.disposeWithMe(this._drawingManagerService.featurePluginGroupUpdate$.subscribe((params) => {
-            this._commandService.executeCommand(GroupSheetDrawingCommand.id, params);
-            const { unitId, subUnitId, drawingId } = params[0].parent;
-            this._commandService.syncExecuteCommand(SetDrawingSelectedOperation.id, [{ unitId, subUnitId, drawingId }]);
+            const grpParams = [];
+            for (const param of params) {
+                const parent = param.parent;
+                const grpSheetTransform = this._getSheetTransformByParam(parent, true);
+
+                const children = [];
+                for (const child of param.children) {
+                    const childSheetTransformInfo = this._getSheetTransformByParam(child, false);
+                    if (childSheetTransformInfo != null) {
+                        children.push({
+                            ...child,
+                            sheetTransform: childSheetTransformInfo.sheetTransform,
+                            axisAlignSheetTransform: childSheetTransformInfo.axisAlignSheetTransform,
+                        });
+                    }
+                }
+
+                const grpParam = {
+                    parent: { ...parent, sheetTransform: grpSheetTransform?.sheetTransform, axisAlignSheetTransform: grpSheetTransform?.axisAlignSheetTransform },
+                    children,
+
+                };
+                grpParams.push(grpParam);
+            }
+            if (grpParams.length > 0) {
+                this._commandService.executeCommand(GroupSheetDrawingCommand.id, grpParams);
+                const { unitId, subUnitId, drawingId } = params[0].parent;
+                this._commandService.syncExecuteCommand(SetDrawingSelectedOperation.id, [{ unitId, subUnitId, drawingId }]);
+            }
         }));
 
         this.disposeWithMe(this._drawingManagerService.featurePluginUngroupUpdate$.subscribe((params) => {
-            this._commandService.executeCommand(UngroupSheetDrawingCommand.id, params);
+            const unGroupParams = [];
+            for (const param of params) {
+                const { children } = param;
+                const childParams = [];
+                for (const child of children) {
+                    const childSheetTransform = this._getSheetTransformByParam(child, false);
+                    if (childSheetTransform != null) {
+                        childParams.push({
+                            ...child,
+                            sheetTransform: childSheetTransform.sheetTransform,
+                            axisAlignSheetTransform: childSheetTransform.axisAlignSheetTransform,
+                        });
+                    }
+                }
+                unGroupParams.push({
+                    ...param,
+                    children: childParams,
+                });
+            }
+            this._commandService.executeCommand(UngroupSheetDrawingCommand.id, unGroupParams);
         }));
     }
 

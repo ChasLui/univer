@@ -1,109 +1,48 @@
-/**
- * Copyright 2023-present DreamNum Co., Ltd.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
-import { LocaleService, LocaleType } from '@univerjs/core';
+import type { IUniverDebuggerConfig } from '../config/config';
+import { IConfigService, LocaleService, LocaleType } from '@univerjs/core';
 import { useDependency } from '@univerjs/ui';
-import { useEffect } from 'react';
+import { useCallback, useEffect } from 'react';
+import { DEBUGGER_PLUGIN_CONFIG_KEY } from '../config/config';
 
-const locales = [
-    {
-        label: 'English',
-        value: LocaleType.EN_US,
-    },
-    {
-        label: 'Français',
-        value: LocaleType.FR_FR,
-    },
-    {
-        label: '简体中文',
-        value: LocaleType.ZH_CN,
-    },
-    {
-        label: 'Русский',
-        value: LocaleType.RU_RU,
-    },
-    {
-        label: '繁體中文',
-        value: LocaleType.ZH_TW,
-    },
-    {
-        label: 'Tiếng Việt',
-        value: LocaleType.VI_VN,
-    },
-    {
-        label: '日本語',
-        value: LocaleType.JA_JP,
-    },
-    {
-        label: '한국어',
-        value: LocaleType.KO_KR,
-    },
-    {
-        label: 'Español',
-        value: 'es-ES',
-    },
-    {
-        label: 'Català',
-        value: 'ca-ES',
-    },
-];
+const localeLabels: Record<LocaleType, string> = {
+    [LocaleType.AR_SA]: 'العربية',
+    [LocaleType.CA_ES]: 'Català',
+    [LocaleType.DE_DE]: 'Deutsch',
+    [LocaleType.EN_US]: 'English',
+    [LocaleType.ES_ES]: 'Español',
+    [LocaleType.FA_IR]: 'فارسی',
+    [LocaleType.FR_FR]: 'Français',
+    [LocaleType.ID_ID]: 'Bahasa Indonesia',
+    [LocaleType.IT_IT]: 'Italiano',
+    [LocaleType.JA_JP]: '日本語',
+    [LocaleType.KO_KR]: '한국어',
+    [LocaleType.PL_PL]: 'Polski',
+    [LocaleType.PT_BR]: 'Português (Brasil)',
+    [LocaleType.RU_RU]: 'Русский',
+    [LocaleType.SK_SK]: 'Slovenčina',
+    [LocaleType.VI_VN]: 'Tiếng Việt',
+    [LocaleType.ZH_CN]: '简体中文',
+    [LocaleType.ZH_HK]: '繁體中文（香港）',
+    [LocaleType.ZH_TW]: '繁體中文（台灣）',
+};
 
 export function useLocale() {
+    const configService = useDependency(IConfigService);
     const localeService = useDependency(LocaleService);
+    const configs = configService.getConfig<IUniverDebuggerConfig>(DEBUGGER_PLUGIN_CONFIG_KEY);
+    const localeLoader = configs?.localeLoader;
 
-    async function loadLocales(value: string) {
-        let locales;
-        switch (value) {
-            case LocaleType.ZH_CN:
-                locales = await import('@univerjs/mockdata/locales/zh-CN');
-                break;
-            case LocaleType.ZH_TW:
-                locales = await import('@univerjs/mockdata/locales/zh-TW');
-                break;
-            case LocaleType.FR_FR:
-                locales = await import('@univerjs/mockdata/locales/fr-FR');
-                break;
-            case LocaleType.RU_RU:
-                locales = await import('@univerjs/mockdata/locales/ru-RU');
-                break;
-            case LocaleType.VI_VN:
-                locales = await import('@univerjs/mockdata/locales/vi-VN');
-                break;
-            case LocaleType.JA_JP:
-                locales = await import('@univerjs/mockdata/locales/ja-JP');
-                break;
-            case LocaleType.KO_KR:
-                locales = await import('@univerjs/mockdata/locales/ko-KR');
-                break;
-            case 'es-ES':
-                locales = await import('@univerjs/mockdata/locales/es-ES');
-                break;
-            case 'ca-ES':
-                locales = await import('@univerjs/mockdata/locales/ca-ES');
-                break;
-            case LocaleType.EN_US:
-            default:
-                locales = await import('@univerjs/mockdata/locales/en-US');
-                break;
+    const loadLocales = useCallback(async (value: string) => {
+        const locale = value as LocaleType;
+        if (!localeLoader) {
+            throw new Error('[UniverDebuggerPlugin]: localeLoader is required.');
         }
+        const localePack = await localeLoader(locale);
 
         localeService.load({
-            [value]: locales.default,
+            [locale]: localePack,
         });
-    }
+    }, [localeLoader, localeService]);
 
     useEffect(() => {
         const locale = localStorage.getItem('local.locale');
@@ -113,7 +52,7 @@ export function useLocale() {
                 localeService.setLocale(locale as LocaleType);
             });
         }
-    }, []);
+    }, [loadLocales, localeService]);
 
     const onSelect = async (value: string) => {
         await loadLocales(value);
@@ -126,12 +65,12 @@ export function useLocale() {
     return {
         type: 'subItem' as const,
         children: '🌐 Languages',
-        options: locales.map((lang) => ({
+        options: Object.values(LocaleType).map((locale) => ({
             type: 'radio' as const,
             value: localeService.getCurrentLocale(),
             options: [{
-                label: lang.label,
-                value: lang.value,
+                label: localeLabels[locale],
+                value: locale,
             }],
             onSelect,
         })),

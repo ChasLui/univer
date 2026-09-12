@@ -15,12 +15,12 @@
  */
 
 import { FEnum } from '@univerjs/core/facade';
-import { CFNumberOperator, CFTimePeriodOperator } from '@univerjs/sheets-conditional-formatting';
+import { CFNumberOperator, CFTimePeriodOperator, CFValueType, IIconSetType } from '@univerjs/sheets-conditional-formatting';
 
 /**
  * @ignore
  */
-export interface IFSheetsConditionalFormattingEnum {
+export interface IFSheetsConditionalFormattingEnumMixin {
     /**
      * Conditional formatting number operator
      */
@@ -30,21 +30,39 @@ export interface IFSheetsConditionalFormattingEnum {
      * Conditional formatting time period operator
      */
     ConditionFormatTimePeriodOperatorEnum: typeof CFTimePeriodOperator;
+
+    /**
+     * Conditional formatting icon set type
+     */
+    ConditionFormatIconSetTypeEnum: typeof IIconSetType;
+
+    /**
+     * Conditional formatting value type
+     */
+    ConditionFormatValueTypeEnum: typeof CFValueType;
 }
 
-export class FSheetsConditionalFormattingEnum implements IFSheetsConditionalFormattingEnum {
-    get ConditionFormatNumberOperatorEnum(): typeof CFNumberOperator {
+export class FSheetsConditionalFormattingEnumMixin extends FEnum implements IFSheetsConditionalFormattingEnumMixin {
+    override get ConditionFormatNumberOperatorEnum(): typeof CFNumberOperator {
         return CFNumberOperator;
     }
 
-    get ConditionFormatTimePeriodOperatorEnum(): typeof CFTimePeriodOperator {
+    override get ConditionFormatTimePeriodOperatorEnum(): typeof CFTimePeriodOperator {
         return CFTimePeriodOperator;
+    }
+
+    override get ConditionFormatIconSetTypeEnum(): typeof IIconSetType {
+        return IIconSetType;
+    }
+
+    override get ConditionFormatValueTypeEnum(): typeof CFValueType {
+        return CFValueType;
     }
 }
 
-FEnum.extend(FSheetsConditionalFormattingEnum);
+FEnum.extend(FSheetsConditionalFormattingEnumMixin);
 declare module '@univerjs/core/facade' {
     // eslint-disable-next-line ts/naming-convention
-    export interface FEnum extends IFSheetsConditionalFormattingEnum {
+    export interface FEnum extends IFSheetsConditionalFormattingEnumMixin {
     }
 }

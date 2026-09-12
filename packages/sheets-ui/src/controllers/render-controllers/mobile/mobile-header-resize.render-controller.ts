@@ -30,6 +30,7 @@ import {
 } from '@univerjs/core';
 import { Rect } from '@univerjs/engine-render';
 import {
+    attachSelectionWithCoord,
     DeltaColumnWidthCommand,
     DeltaRowHeightCommand,
     SheetsSelectionsService,
@@ -37,7 +38,6 @@ import {
 import { SHEET_COMPONENT_HEADER_LAYER_INDEX } from '../../../common/keys';
 import { MOBILE_EXPANDING_SELECTION, MOBILE_PINCH_ZOOMING } from '../../../consts/mobile-context';
 import { SheetScrollManagerService } from '../../../services/scroll-manager.service';
-import { attachSelectionWithCoord } from '../../../services/selection/util';
 import { SheetSkeletonManagerService } from '../../../services/sheet-skeleton-manager.service';
 import {
     HEADER_MENU_SHAPE_SIZE,
@@ -183,7 +183,7 @@ export class MobileHeaderResizeRenderController extends Disposable implements IR
 
         // Position button at the bottom of the selected row(s)
         const rowEndOffset = skeleton.getOffsetByRow(endRow);
-        const { rowHeaderWidth } = skeleton;
+        const { rowHeaderWidth, rowHeaderWidthAndMarginLeft } = skeleton;
 
         const { scaleX, scaleY } = scene.getAncestorScale();
         const scale = Math.max(scaleX, scaleY);
@@ -191,7 +191,7 @@ export class MobileHeaderResizeRenderController extends Disposable implements IR
 
         // Position button in the row header area, centered horizontally, aligned to bottom of row
         this._rowResizeButton.transformByState({
-            left: rowHeaderWidth / 2 - buttonSize / 2,
+            left: rowHeaderWidthAndMarginLeft - rowHeaderWidth / 2 - buttonSize / 2,
             top: rowEndOffset - buttonSize / 2,
         });
 
@@ -245,10 +245,10 @@ export class MobileHeaderResizeRenderController extends Disposable implements IR
         // Update row button position if visible - keep it at the row's bottom edge
         if (this._rowResizeButton?.visible && this._currentRow >= 0) {
             const rowEndOffset = skeleton.getOffsetByRow(this._currentRow);
-            const { rowHeaderWidth } = skeleton;
+            const { rowHeaderWidth, rowHeaderWidthAndMarginLeft } = skeleton;
 
             this._rowResizeButton.transformByState({
-                left: rowHeaderWidth / 2 - buttonSize / 2,
+                left: rowHeaderWidthAndMarginLeft - rowHeaderWidth / 2 - buttonSize / 2,
                 top: rowEndOffset - buttonSize / 2,
             });
         }

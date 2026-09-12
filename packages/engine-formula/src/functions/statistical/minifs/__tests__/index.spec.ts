@@ -27,7 +27,8 @@ import { generateExecuteAstNodeData } from '../../../../engine/utils/ast-node-to
 import { IFormulaCurrentConfigService } from '../../../../services/current-data.service';
 import { IFunctionService } from '../../../../services/function.service';
 import { IFormulaRuntimeService } from '../../../../services/runtime.service';
-import { createFunctionTestBed, getObjectValue } from '../../../__tests__/create-function-test-bed';
+import { createFunctionTestBed } from '../../../__tests__/create-function-test-bed';
+import { getObjectValue } from '../../../util';
 import { FUNCTION_NAMES_STATISTICAL } from '../../function-names';
 import { Minifs } from '../index';
 
@@ -189,6 +190,11 @@ describe('Test minifs function', () => {
         it('Value is normal', async () => {
             const result = await calculate('=MINIFS(A1:A4,B1:B4,">3")');
             expect(result).toBe(3);
+        });
+
+        it('Value is zero when no cells match criteria', async () => {
+            const result = await calculate('=MINIFS(A1:A4,B1:B4,">9")');
+            expect(result).toBe(0);
         });
 
         it('Value is array', async () => {

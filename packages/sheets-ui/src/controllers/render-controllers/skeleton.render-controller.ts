@@ -16,7 +16,7 @@
 
 import type { Nullable, Workbook } from '@univerjs/core';
 import type { IRenderContext, IRenderModule } from '@univerjs/engine-render';
-import type { ISheetSkeletonManagerParam } from '../../services/sheet-skeleton-manager.service';
+import type { ISheetSkeletonManagerParam } from '@univerjs/sheets';
 import { Disposable, Inject } from '@univerjs/core';
 import { IRenderManagerService } from '@univerjs/engine-render';
 import { SheetSkeletonManagerService } from '../../services/sheet-skeleton-manager.service';
@@ -29,13 +29,11 @@ export class SheetSkeletonRenderController extends Disposable implements IRender
     ) {
         super();
 
-        this.disposeWithMe(this._context.unit.sheetDisposed$.subscribe((sheet) => {
-            this._sheetSkeletonManagerService.disposeSkeleton(sheet.getSheetId());
-        }));
-
-        this._sheetSkeletonManagerService.currentSkeleton$.subscribe((param: Nullable<ISheetSkeletonManagerParam>) => {
-            this._updateSceneSize(param);
-        });
+        this.disposeWithMe(
+            this._sheetSkeletonManagerService.currentSkeleton$.subscribe((param: Nullable<ISheetSkeletonManagerParam>) => {
+                this._updateSceneSize(param);
+            })
+        );
     }
 
     private _updateSceneSize(param: Nullable<ISheetSkeletonManagerParam>) {
@@ -45,7 +43,7 @@ export class SheetSkeletonRenderController extends Disposable implements IRender
 
         const { unitId } = this._context;
         const { skeleton } = param;
-        const scene = this._renderManagerService.getRenderById(unitId)?.scene;
+        const scene = this._renderManagerService.getRenderUnitById(unitId)?.scene;
 
         if (skeleton == null || scene == null) {
             return;
@@ -61,5 +59,6 @@ export class SheetSkeletonRenderController extends Disposable implements IRender
             width: rowHeaderWidthAndMarginLeft + columnTotalWidth,
             height: columnHeaderHeightAndMarginTop + rowTotalHeight,
         });
+        scene.getMainViewport().setMargin(rowHeaderWidthAndMarginLeft, columnHeaderHeightAndMarginTop);
     }
 }

@@ -14,32 +14,38 @@
  * limitations under the License.
  */
 
-import type { IUniverSheetsTableConfig } from './controllers/config.schema';
-import { ICommandService, IConfigService, Inject, Injector, merge, Plugin, registerDependencies, touchDependencies, UniverInstanceType } from '@univerjs/core';
+import type { IUniverSheetsTableConfig } from './config/config';
+import { DependentOn, ICommandService, IConfigService, Inject, Injector, merge, Plugin, registerDependencies, touchDependencies, UniverInstanceType } from '@univerjs/core';
+import { UniverSheetsPlugin } from '@univerjs/sheets';
+import pkg from '../package.json';
 import { AddSheetTableCommand } from './commands/commands/add-sheet-table.command';
 import { AddTableThemeCommand } from './commands/commands/add-table-theme.command';
 import { DeleteSheetTableCommand } from './commands/commands/delete-sheet-table.command';
 import { RemoveTableThemeCommand } from './commands/commands/remove-table-theme.command';
 import { SetSheetTableCommand } from './commands/commands/set-sheet-table.command';
 import { SetSheetTableFilterCommand } from './commands/commands/set-table-filter.command';
-import { SheetTableInsertColCommand, SheetTableInsertRowCommand, SheetTableRemoveColCommand, SheetTableRemoveRowCommand } from './commands/commands/sheet-table-row-col.command';
+import { SetSheetTableSortStateCommand } from './commands/commands/set-table-sort-state.command';
+import { SheetTableInsertColCommand, SheetTableInsertColumnAtCommand, SheetTableInsertRowAtCommand, SheetTableInsertRowCommand, SheetTableRemoveColCommand, SheetTableRemoveColumnAtCommand, SheetTableRemoveRowCommand } from './commands/commands/sheet-table-row-col.command';
 import { AddSheetTableMutation } from './commands/mutations/add-sheet-table.mutation';
 import { DeleteSheetTableMutation } from './commands/mutations/delete-sheet-table.mutation';
 import { SetSheetTableMutation } from './commands/mutations/set-sheet-table.mutation';
 import { SetSheetTableFilterMutation } from './commands/mutations/set-table-filter.mutation';
+import { defaultPluginConfig, SHEETS_TABLE_PLUGIN_CONFIG_KEY } from './config/config';
 import { PLUGIN_NAME } from './const';
-import { defaultPluginConfig, SHEETS_TABLE_PLUGIN_CONFIG_KEY } from './controllers/config.schema';
 import { SheetTableFormulaController } from './controllers/sheet-table-formula.controller';
 import { SheetTableRangeController } from './controllers/sheet-table-range.controller';
 import { SheetTableRefRangeController } from './controllers/sheet-table-ref-range.controller';
 import { SheetsTableThemeController } from './controllers/sheet-table-theme.controller';
 import { SheetsTableController } from './controllers/sheets-table.controller';
 import { TableFilterController } from './controllers/table-filter.controller';
-import { TableManager } from './model/table-manager';
-import { SheetTableService } from './services/table-service';
+import { TableManager } from './models/table-manager';
+import { SheetTableService } from './services/table.service';
 
+@DependentOn(UniverSheetsPlugin)
 export class UniverSheetsTablePlugin extends Plugin {
     static override pluginName = PLUGIN_NAME;
+    static override packageName = pkg.name;
+    static override version = pkg.version;
     static override type = UniverInstanceType.UNIVER_SHEET;
 
     constructor(
@@ -97,14 +103,18 @@ export class UniverSheetsTablePlugin extends Plugin {
             DeleteSheetTableMutation,
             SetSheetTableFilterMutation,
             SetSheetTableFilterCommand,
+            SetSheetTableSortStateCommand,
             SetSheetTableCommand,
             SetSheetTableMutation,
             AddTableThemeCommand,
             RemoveTableThemeCommand,
             SheetTableInsertRowCommand,
             SheetTableInsertColCommand,
+            SheetTableInsertRowAtCommand,
+            SheetTableInsertColumnAtCommand,
             SheetTableRemoveRowCommand,
             SheetTableRemoveColCommand,
+            SheetTableRemoveColumnAtCommand,
         ].forEach((m) => this._commandService.registerCommand(m));
     }
 }

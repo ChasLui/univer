@@ -14,13 +14,12 @@
  * limitations under the License.
  */
 
-import type { Workbook, Worksheet } from '@univerjs/core';
+import type { IPermissionPoint, Workbook, Worksheet } from '@univerjs/core';
 import type { IObjectModel, IObjectPointModel } from '../type';
 import { ILogService, Inject, Injector, IPermissionService, IResourceManagerService, IUniverInstanceService, RxDisposable, UniverInstanceType } from '@univerjs/core';
-import { UniverType } from '@univerjs/protocol';
 
 import { takeUntil } from 'rxjs/operators';
-import { RangeProtectionRuleModel } from '../../../model/range-protection-rule.model';
+import { RangeProtectionRuleModel } from '../../../models/range-protection-rule.model';
 import { getAllRangePermissionPoint } from '../range-permission/util';
 import { getAllWorkbookPermissionPoint } from '../workbook-permission';
 import { getAllWorksheetPermissionPoint, getAllWorksheetPermissionPointByPointPanel } from './utils';
@@ -83,11 +82,9 @@ export class WorksheetPermissionService extends RxDisposable {
             });
         };
 
-        this._univerInstanceService.getAllUnitsForType<Workbook>(UniverInstanceType.UNIVER_SHEET).forEach((workbook) => {
-            handleWorkbook(workbook);
-        });
+        this._univerInstanceService.getAllUnitsForType<Workbook>(UniverInstanceType.UNIVER_SHEET).forEach((workbook) => handleWorkbook(workbook));
 
-        this._univerInstanceService.getTypeOfUnitAdded$<Workbook>(UniverInstanceType.UNIVER_SHEET).pipe(takeUntil(this.dispose$)).subscribe(handleWorkbook);
+        this._univerInstanceService.getTypeOfUnitAdded$<Workbook>(UniverInstanceType.UNIVER_SHEET).pipe(takeUntil(this.dispose$)).subscribe((event) => handleWorkbook(event.unit));
 
         this._univerInstanceService.getTypeOfUnitDisposed$<Workbook>(UniverInstanceType.UNIVER_SHEET).pipe(takeUntil(this.dispose$)).subscribe((workbook) => {
             workbook.getSheets().forEach((worksheet) => {
@@ -147,14 +144,14 @@ export class WorksheetPermissionService extends RxDisposable {
                 toJson,
                 parseJson,
                 pluginName: RULE_MODEL_PLUGIN_NAME,
-                businesses: [UniverType.UNIVER_SHEET],
+                businesses: [UniverInstanceType.UNIVER_SHEET],
                 onLoad: (unitId, resources) => {
                     this._worksheetProtectionRuleModel.fromObject(resources);
                     Object.keys(resources).forEach((subUnitId) => {
                         getAllWorksheetPermissionPoint().forEach((F) => {
                             const instance = new F(unitId, subUnitId);
                             instance.value = false;
-                            this._permissionService.addPermissionPoint(instance);
+                            this._addOrUpdatePermissionPoint(instance);
                         });
                     });
                     this._worksheetProtectionRuleModel.changeRuleInitState(true);
@@ -202,13 +199,13 @@ export class WorksheetPermissionService extends RxDisposable {
                 toJson,
                 parseJson,
                 pluginName: POINT_MODEL_PLUGIN_NAME,
-                businesses: [UniverType.UNIVER_SHEET],
+                businesses: [UniverInstanceType.UNIVER_SHEET],
                 onLoad: (unitId, resources) => {
                     this._worksheetProtectionPointRuleModel.fromObject(resources);
                     Object.keys(resources).forEach((subUnitId) => {
                         getAllWorksheetPermissionPointByPointPanel().forEach((F) => {
                             const instance = new F(unitId, subUnitId);
-                            this._permissionService.addPermissionPoint(instance);
+                            this._addOrUpdatePermissionPoint(instance);
                         });
                     });
                 },
@@ -217,5 +214,14 @@ export class WorksheetPermissionService extends RxDisposable {
                 },
             })
         );
+    }
+
+    private _addOrUpdatePermissionPoint(instance: IPermissionPoint) {
+        if (this._permissionService.getPermissionPoint(instance.id)) {
+            this._permissionService.updatePermissionPoint(instance.id, instance.value);
+            return;
+        }
+
+        this._permissionService.addPermissionPoint(instance);
     }
 }

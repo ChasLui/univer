@@ -1,9 +1,9 @@
 {
     "name": "@univerjs/docs-drawing-ui",
-    "version": "0.15.3",
+    "version": "1.0.0-rc.0",
     "private": false,
-    "description": "",
-    "author": "DreamNum <developer@univer.ai>",
+    "description": "Drawing UI integration for Univer Docs.",
+    "author": "DreamNum Co., Ltd. <developer@univer.ai>",
     "license": "Apache-2.0",
     "funding": {
         "type": "opencollective",
@@ -17,7 +17,13 @@
     "bugs": {
         "url": "https://github.com/dream-num/univer/issues"
     },
-    "keywords": [],
+    "keywords": [
+        "univer",
+        "docs",
+        "drawing",
+        "ui",
+        "plugin"
+    ],
     "exports": {
         ".": "./src/index.ts",
         "./*": "./src/*",
@@ -59,7 +65,9 @@
         "test:watch": "vitest",
         "coverage": "vitest run --coverage",
         "typecheck": "tsc --noEmit",
-        "build": "univer-cli build"
+        "build:bundle": "univer-cli build",
+        "build:types": "tsc -p tsconfig.node.json",
+        "build": "pnpm run build:bundle && pnpm run build:types"
     },
     "peerDependencies": {
         "react": "^16.9.0 || ^17.0.0 || ^18.0.0 || ^19.0.0 || ^19.0.0-rc",
@@ -74,16 +82,18 @@
         "@univerjs/drawing": "workspace:*",
         "@univerjs/drawing-ui": "workspace:*",
         "@univerjs/engine-render": "workspace:*",
+        "@univerjs/icons": "1.38.0",
         "@univerjs/ui": "workspace:*"
     },
     "devDependencies": {
+        "@testing-library/react": "^16.3.2",
         "@univerjs-infra/shared": "workspace:*",
-        "postcss": "^8.5.6",
+        "@univerjs/protocol": "workspace:*",
+        "postcss": "^8.5.26",
         "react": "18.3.1",
         "rxjs": "^7.8.2",
         "tailwindcss": "3.4.18",
-        "typescript": "^5.9.3",
-        "vite": "^7.3.1",
-        "vitest": "^4.0.18"
+        "typescript": "^6.0.3",
+        "vitest": "^5.0.0"
     }
 }

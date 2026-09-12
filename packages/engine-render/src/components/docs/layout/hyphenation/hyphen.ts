@@ -17,12 +17,19 @@
 import type { IDisposable, Nullable } from '@univerjs/core';
 import type { IHyphenPattern, RawHyphenPattern } from './tools';
 import { Lang } from './lang';
+import { PATTERN_LOADERS } from './pattern-loaders.gen';
 import { EnUs } from './patterns/en-us';
 import { createCharIterator, createStringSlicer, parsePattern, snackToPascal } from './tools';
+
+// NOTE: tsdown/rolldown doesn't rewrite dynamic import vars like
+// `import(`./patterns/${lang}.ts`)`.
+// Use a static import map so the bundler can create code-split chunks
+// and rewrite them to the hashed output filenames.
 
 export class Hyphen implements IDisposable {
     private _patterns: Map<Lang, IHyphenPattern> = new Map();
     private _hyphenCache: Map<Lang, Map<string, string[]>> = new Map();
+    private _patternLoads = new Map<Lang, Promise<void>>();
 
     private static _instance: Nullable<Hyphen> = null;
 
@@ -36,7 +43,6 @@ export class Hyphen implements IDisposable {
 
     constructor() {
         this._preloadPatterns();
-        this.loadPattern(Lang.EnGb);
     }
 
     private _preloadPatterns() {
@@ -68,13 +74,43 @@ export class Hyphen implements IDisposable {
         }
     }
 
-    async loadPattern(lang: Lang) {
-        let pattern = await import(`./patterns/${lang}.ts`);
+    loadPattern(lang: Lang): Promise<void> {
+        if (this.hasPattern(lang)) {
+            return Promise.resolve();
+        }
+        const pending = this._patternLoads.get(lang);
+        if (pending != null) {
+            return pending;
+        }
+        const load = this._loadPattern(lang).finally(() => {
+            if (this._patternLoads.get(lang) === load) {
+                this._patternLoads.delete(lang);
+            }
+        });
+        this._patternLoads.set(lang, load);
+        return load;
+    }
 
-        pattern = pattern?.[snackToPascal(lang)];
+    private async _loadPattern(lang: Lang): Promise<void> {
+        const loader = PATTERN_LOADERS[lang];
+
+        if (!loader) {
+            return;
+        }
+
+        const loads = this._patternLoads;
+        const loaded = await loader();
+        if (this._patternLoads !== loads) {
+            return;
+        }
+        const exported = Array.isArray(loaded)
+            ? loaded
+            : (loaded as Record<string, unknown> | null)?.[snackToPascal(lang)];
+
+        const pattern = exported as RawHyphenPattern | undefined;
 
         if (pattern == null) {
-            return;
+            throw new Error(`Invalid hyphenation pattern for ${lang}`);
         }
 
         this._patterns.set(lang, parsePattern(pattern));
@@ -186,6 +222,7 @@ export class Hyphen implements IDisposable {
     }
 
     dispose(): void {
+        this._patternLoads = new Map();
         this._patterns.clear();
         this._hyphenCache.clear();
     }

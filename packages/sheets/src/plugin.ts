@@ -15,14 +15,16 @@
  */
 
 import type { Dependency } from '@univerjs/core';
-import type { IUniverSheetsConfig } from './controllers/config.schema';
+import type { IUniverSheetsConfig } from './config/config';
 import { AUTO_HEIGHT_FOR_MERGED_CELLS, DependentOn, IConfigService, Inject, Injector, IS_ROW_STYLE_PRECEDE_COLUMN_STYLE, merge, mergeOverrideWithDependencies, Plugin, registerDependencies, touchDependencies, UniverInstanceType } from '@univerjs/core';
 import { UniverFormulaEnginePlugin } from '@univerjs/engine-formula';
+import pkg from '../package.json';
+import { defaultPluginConfig, SHEETS_PLUGIN_CONFIG_KEY } from './config/config';
 import { ActiveWorksheetController } from './controllers/active-worksheet.controller';
+import { AutoFillController } from './controllers/auto-fill.controller';
 import { BasicWorksheetController } from './controllers/basic-worksheet.controller';
 import { CalculateResultApplyController } from './controllers/calculate-result-apply.controller';
 import { ONLY_REGISTER_FORMULA_RELATED_MUTATIONS_KEY } from './controllers/config';
-import { defaultPluginConfig, SHEETS_PLUGIN_CONFIG_KEY } from './controllers/config.schema';
 import { DefinedNameDataController } from './controllers/defined-name-data.controller';
 import { SheetsFreezeSyncController } from './controllers/freeze-sync.controller';
 import { MergeCellController } from './controllers/merge-cell.controller';
@@ -31,12 +33,13 @@ import { SheetPermissionCheckController } from './controllers/permission/sheet-p
 import { SheetPermissionInitController } from './controllers/permission/sheet-permission-init.controller';
 import { SheetPermissionViewModelController } from './controllers/permission/sheet-permission-view-model.controller';
 import { ZebraCrossingCacheController } from './controllers/zebar-crossing.controller';
-import { RangeProtectionRenderModel } from './model/range-protection-render.model';
-import { RangeProtectionRuleModel } from './model/range-protection-rule.model';
-import { RangeProtectionCache } from './model/range-protection.cache';
-import { SheetRangeThemeModel } from './model/range-theme-model';
+import { RangeProtectionRenderModel } from './models/range-protection-render.model';
+import { RangeProtectionRuleModel } from './models/range-protection-rule.model';
+import { RangeProtectionCache } from './models/range-protection.cache';
+import { SheetRangeThemeModel } from './models/range-theme-model';
+import { AutoFillService, IAutoFillService } from './services/auto-fill/auto-fill.service';
 import { BorderStyleManagerService } from './services/border-style-manager.service';
-import { ExclusiveRangeService, IExclusiveRangeService } from './services/exclusive-range/exclusive-range-service';
+import { ExclusiveRangeService, IExclusiveRangeService } from './services/exclusive-range/exclusive-range.service';
 import { SheetLazyExecuteScheduleService } from './services/lazy-execute-schedule.service';
 import { NumfmtService } from './services/numfmt/numfmt.service';
 import { INumfmtService } from './services/numfmt/type';
@@ -44,17 +47,17 @@ import { RangeProtectionRefRangeService } from './services/permission/range-perm
 import { RangeProtectionService } from './services/permission/range-permission/range-protection.service';
 import { WorkbookPermissionService } from './services/permission/workbook-permission/workbook-permission.service';
 import { WorksheetPermissionService, WorksheetProtectionPointModel, WorksheetProtectionRuleModel } from './services/permission/worksheet-permission';
-import { SheetRangeThemeService } from './services/range-theme-service';
+import { SheetRangeThemeService } from './services/range-theme.service';
 import { RefRangeService } from './services/ref-range/ref-range.service';
 import { SheetsSelectionsService } from './services/selections/selection.service';
 import { SheetInterceptorService } from './services/sheet-interceptor/sheet-interceptor.service';
 import { SheetSkeletonService } from './skeleton/skeleton.service';
 
-const PLUGIN_NAME = 'SHEET_PLUGIN';
-
 @DependentOn(UniverFormulaEnginePlugin)
 export class UniverSheetsPlugin extends Plugin {
-    static override pluginName = PLUGIN_NAME;
+    static override pluginName = 'SHEET_PLUGIN';
+    static override packageName = pkg.name;
+    static override version = pkg.version;
     static override type = UniverInstanceType.UNIVER_SHEET;
 
     constructor(
@@ -130,6 +133,8 @@ export class UniverSheetsPlugin extends Plugin {
                 useClass: ExclusiveRangeService,
                 deps: [SheetsSelectionsService],
             }],
+            [IAutoFillService, { useClass: AutoFillService }],
+            [AutoFillController],
         ];
 
         if (!this._config?.notExecuteFormula) {
@@ -155,6 +160,7 @@ export class UniverSheetsPlugin extends Plugin {
             [WorksheetPermissionService],
             [SheetPermissionViewModelController],
             [SheetSkeletonService],
+            [AutoFillController],
         ]);
 
         if (!this._config?.onlyRegisterFormulaRelatedMutations) {

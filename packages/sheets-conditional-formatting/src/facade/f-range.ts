@@ -15,22 +15,13 @@
  */
 
 import type {
-    IAddConditionalRuleMutationParams,
-    IAnchor,
     IClearRangeCfParams,
     IConditionFormattingRule,
-    IDeleteConditionalRuleMutationParams,
-    IMoveConditionalRuleMutationParams,
-    ISetConditionalRuleMutationParams,
 } from '@univerjs/sheets-conditional-formatting';
 import { Rectangle } from '@univerjs/core';
 import {
-    AddCfCommand,
     ClearRangeCfCommand,
     ConditionalFormattingRuleModel,
-    DeleteCfCommand,
-    MoveCfCommand,
-    SetCfCommand,
 } from '@univerjs/sheets-conditional-formatting';
 
 import { FRange } from '@univerjs/sheets/facade';
@@ -39,14 +30,15 @@ import { FConditionalFormattingBuilder } from './f-conditional-formatting-builde
 /**
  * @ignore
  */
-export interface IFRangeConditionalFormattingMixin {
+export interface IFRangeSheetsConditionalFormattingMixin {
     /**
      * Gets all the conditional formatting for the current range.
      * @returns {IConditionFormattingRule[]} conditional formatting rules for the current range.
      * @example
      * ```ts
      * const fWorkbook = univerAPI.getActiveWorkbook();
-     * const fWorksheet = fWorkbook.getActiveSheet();
+     * const fWorksheet = fWorkbook.getSheetByName('Sheet1');
+     * if (!fWorksheet) return;
      *
      * // Create a conditional formatting rule that sets the cell format to italic, red background, and green font color when the cell is not empty.
      * const fRange = fWorksheet.getRange('A1:T100');
@@ -73,7 +65,8 @@ export interface IFRangeConditionalFormattingMixin {
      * @example
      * ```ts
      * const fWorkbook = univerAPI.getActiveWorkbook();
-     * const fWorksheet = fWorkbook.getActiveSheet();
+     * const fWorksheet = fWorkbook.getSheetByName('Sheet1');
+     * if (!fWorksheet) return;
      *
      * // Create a conditional formatting rule that sets the cell format to italic, red background, and green font color when the cell is not empty.
      * const fRange = fWorksheet.getRange('A1:T100');
@@ -90,52 +83,14 @@ export interface IFRangeConditionalFormattingMixin {
     createConditionalFormattingRule(): FConditionalFormattingBuilder;
 
     /**
-     * Add a new conditional format
-     * @deprecated use same API in FWorkSheet.
-     * @param {IConditionFormattingRule} rule
-     * @returns {FRange} Returns the current range instance for method chaining
-     * @memberof IFRangeConditionalFormattingMixin
-     */
-    addConditionalFormattingRule(rule: IConditionFormattingRule): FRange;
-
-    /**
-     * Delete conditional format according to `cfId`
-     * @deprecated use same API in FWorkSheet.
-     * @param {string} cfId
-     * @returns {FRange} Returns the current range instance for method chaining
-     * @memberof IFRangeConditionalFormattingMixin
-     */
-    deleteConditionalFormattingRule(cfId: string): FRange;
-
-    /**
-     * Modify the priority of the conditional format
-     * @deprecated use same API in FWorkSheet.
-     * @param {string} cfId Rules that need to be moved
-     * @param {string} toCfId Target rule
-     * @param {IAnchor['type']} [type] After the default move to the destination rule, if type = before moves to the front, the default value is after
-     * @returns {FRange} Returns the current range instance for method chaining
-     * @memberof FRangeConditionalFormattingMixin
-     */
-    moveConditionalFormattingRule(cfId: string, toCfId: string, type?: IAnchor['type']): FRange;
-
-    /**
-     * Set the conditional format according to `cfId`
-     * @deprecated use same API in FWorkSheet.
-     * @param {string} cfId
-     * @param {IConditionFormattingRule} rule
-     * @returns {FRange} Returns the current range instance for method chaining
-     * @memberof IFRangeConditionalFormattingMixin
-     */
-    setConditionalFormattingRule(cfId: string, rule: IConditionFormattingRule): FRange;
-
-    /**
      * Clear the conditional rules for the range.
      * @returns {FRange} Returns the current range instance for method chaining
      * @memberof IFRangeConditionalFormattingMixin
      * @example
      * ```ts
      * const fWorkbook = univerAPI.getActiveWorkbook();
-     * const fWorksheet = fWorkbook.getActiveSheet();
+     * const fWorksheet = fWorkbook.getSheetByName('Sheet1');
+     * if (!fWorksheet) return;
      * const fRange = fWorksheet.getRange('A1:T100');
      *
      * // Clear all conditional format rules for the range
@@ -146,7 +101,7 @@ export interface IFRangeConditionalFormattingMixin {
     clearConditionalFormatRules(): FRange;
 }
 
-export class FRangeConditionalFormattingMixin extends FRange implements IFRangeConditionalFormattingMixin {
+export class FRangeSheetsConditionalFormattingMixin extends FRange implements IFRangeSheetsConditionalFormattingMixin {
     private _getConditionalFormattingRuleModel(): ConditionalFormattingRuleModel {
         return this._injector.get(ConditionalFormattingRuleModel);
     }
@@ -160,48 +115,6 @@ export class FRangeConditionalFormattingMixin extends FRange implements IFRangeC
         return new FConditionalFormattingBuilder({ ranges: [this._range] });
     }
 
-    override addConditionalFormattingRule(rule: IConditionFormattingRule): FRange {
-        const params: IAddConditionalRuleMutationParams = {
-            unitId: this._workbook.getUnitId(),
-            subUnitId: this._worksheet.getSheetId(),
-            rule,
-        };
-        this._commandService.syncExecuteCommand(AddCfCommand.id, params);
-        return this;
-    }
-
-    override deleteConditionalFormattingRule(cfId: string): FRange {
-        const params: IDeleteConditionalRuleMutationParams = {
-            unitId: this._workbook.getUnitId(),
-            subUnitId: this._worksheet.getSheetId(),
-            cfId,
-        };
-        this._commandService.syncExecuteCommand(DeleteCfCommand.id, params);
-        return this;
-    }
-
-    override moveConditionalFormattingRule(cfId: string, toCfId: string, type: IAnchor['type'] = 'after'): FRange {
-        const params: IMoveConditionalRuleMutationParams = {
-            unitId: this._workbook.getUnitId(),
-            subUnitId: this._worksheet.getSheetId(),
-            start: { id: cfId, type: 'self' },
-            end: { id: toCfId, type },
-        };
-        this._commandService.syncExecuteCommand(MoveCfCommand.id, params);
-        return this;
-    }
-
-    override setConditionalFormattingRule(cfId: string, rule: IConditionFormattingRule): FRange {
-        const params: ISetConditionalRuleMutationParams = {
-            unitId: this._workbook.getUnitId(),
-            subUnitId: this._worksheet.getSheetId(),
-            rule,
-            cfId,
-        };
-        this._commandService.syncExecuteCommand(SetCfCommand.id, params);
-        return this;
-    }
-
     override clearConditionalFormatRules(): FRange {
         const params: IClearRangeCfParams = {
             unitId: this._workbook.getUnitId(),
@@ -213,8 +126,8 @@ export class FRangeConditionalFormattingMixin extends FRange implements IFRangeC
     }
 }
 
-FRange.extend(FRangeConditionalFormattingMixin);
+FRange.extend(FRangeSheetsConditionalFormattingMixin);
 declare module '@univerjs/sheets/facade' {
     // eslint-disable-next-line ts/naming-convention
-    interface FRange extends IFRangeConditionalFormattingMixin { }
+    interface FRange extends IFRangeSheetsConditionalFormattingMixin { }
 }

@@ -14,28 +14,66 @@
  * limitations under the License.
  */
 
-/* eslint-disable max-lines-per-function */
-
 import type { Workbook, Worksheet } from '@univerjs/core';
-import { Disposable, Inject, IPermissionService, IUniverInstanceService, UniverInstanceType, UserManagerService } from '@univerjs/core';
-import { IDrawingManagerService } from '@univerjs/drawing';
-import { IRenderManagerService, RENDER_CLASS_TYPE } from '@univerjs/engine-render';
-import { WorkbookEditablePermission, WorkbookViewPermission, WorksheetEditPermission, WorksheetViewPermission } from '@univerjs/sheets';
+import type {
+    IInsertSheetDrawingCommandParams,
+    IRemoveSheetDrawingCommandParams,
+    ISetDrawingArrangeCommandParams,
+    ISetDrawingCommandParams,
+} from '@univerjs/sheets-drawing';
+import type { LocaleKey } from '../locale/types';
+import {
+    Disposable,
+    ICommandService,
+    Inject,
+    IPermissionService,
+    IUniverInstanceService,
+    LocaleService,
+    UniverInstanceType,
+    UserManagerService,
+} from '@univerjs/core';
+import { IRenderManagerService, ObjectType } from '@univerjs/engine-render';
+import {
+    SheetPermissionCheckController,
+    WorkbookEditablePermission,
+    WorkbookViewPermission,
+    WorksheetEditPermission,
+    WorksheetViewPermission,
+} from '@univerjs/sheets';
+import {
+    InsertSheetDrawingCommand,
+    ISheetDrawingService,
+    RemoveSheetDrawingCommand,
+    SetDrawingArrangeCommand,
+    SetSheetDrawingCommand,
+    SetSheetDrawingPlacementCommand,
+} from '@univerjs/sheets-drawing';
 import { combineLatest, distinctUntilChanged, EMPTY, map, switchMap, tap } from 'rxjs';
+
+const drawingObjectTypes = [
+    ObjectType.IMAGE, // floating image
+    ObjectType.SHAPE, // shape
+    ObjectType.CHART, // chart rect
+    ObjectType.DRAWING_DOM, // floating dom rect
+];
 
 export class SheetDrawingPermissionController extends Disposable {
     constructor(
-        @IDrawingManagerService private readonly _drawingManagerService: IDrawingManagerService,
+        @Inject(ICommandService) private _commandService: ICommandService,
+        @Inject(LocaleService) private _localeService: LocaleService,
         @IRenderManagerService private readonly _renderManagerService: IRenderManagerService,
         @IPermissionService private readonly _permissionService: IPermissionService,
         @IUniverInstanceService private readonly _univerInstanceService: IUniverInstanceService,
-        @Inject(UserManagerService) private _userManagerService: UserManagerService
+        @Inject(UserManagerService) private _userManagerService: UserManagerService,
+        @Inject(SheetPermissionCheckController) private _sheetPermissionCheckController: SheetPermissionCheckController,
+        @Inject(ISheetDrawingService) private readonly _sheetDrawingService: ISheetDrawingService
     ) {
         super();
         this._initDrawingVisible();
         this._initDrawingEditable();
         this._initViewPermissionChange();
         this._initEditPermissionChange();
+        this._initCommandPermissionCheck();
     }
 
     private _initDrawingVisible() {
@@ -48,14 +86,14 @@ export class SheetDrawingPermissionController extends Disposable {
                 .pipe(
                     switchMap(([workbook, _]) => {
                         if (!workbook) {
-                            this._drawingManagerService.setDrawingVisible(false);
+                            this._sheetDrawingService.setDrawingVisible(false);
                             return EMPTY;
                         }
 
                         return workbook.activeSheet$.pipe(
                             tap((sheet) => {
                                 if (!sheet) {
-                                    this._drawingManagerService.setDrawingVisible(false);
+                                    this._sheetDrawingService.setDrawingVisible(false);
                                     return;
                                 }
 
@@ -70,7 +108,7 @@ export class SheetDrawingPermissionController extends Disposable {
                                     .every((permission) => permission.value);
 
                                 if (worksheetViewPermission) {
-                                    this._drawingManagerService.setDrawingVisible(true);
+                                    this._sheetDrawingService.setDrawingVisible(true);
                                 } else {
                                     this._handleDrawingVisibilityFalse(workbook, sheet);
                                 }
@@ -83,14 +121,14 @@ export class SheetDrawingPermissionController extends Disposable {
     }
 
     private _handleDrawingVisibilityFalse(workbook: Workbook, sheet: Worksheet) {
-        this._drawingManagerService.setDrawingVisible(false);
+        this._sheetDrawingService.setDrawingVisible(false);
 
         const unitId = workbook.getUnitId();
         const subUnitId = sheet.getSheetId();
-        const drawingData = this._drawingManagerService.getDrawingData(unitId, subUnitId);
+        const drawingData = this._sheetDrawingService.getDrawingData(unitId, subUnitId);
         const drawingDataValues = Object.values(drawingData);
 
-        const renderObject = this._renderManagerService.getRenderById(unitId);
+        const renderObject = this._renderManagerService.getRenderUnitById(unitId);
         const scene = renderObject?.scene;
 
         if (!scene) {
@@ -101,7 +139,7 @@ export class SheetDrawingPermissionController extends Disposable {
 
         objects.forEach((object) => {
             if (
-                object.classType === RENDER_CLASS_TYPE.IMAGE &&
+                drawingObjectTypes.includes(object.objectType) &&
                 drawingDataValues.some((item) => object.oKey.includes(item.drawingId))
             ) {
                 scene.removeObject(object);
@@ -120,14 +158,14 @@ export class SheetDrawingPermissionController extends Disposable {
                 .pipe(
                     switchMap(([workbook, _]) => {
                         if (!workbook) {
-                            this._drawingManagerService.setDrawingEditable(false);
+                            this._sheetDrawingService.setDrawingEditable(false);
                             return EMPTY;
                         }
 
                         return workbook.activeSheet$.pipe(
                             tap((sheet) => {
                                 if (!sheet) {
-                                    this._drawingManagerService.setDrawingEditable(false);
+                                    this._sheetDrawingService.setDrawingEditable(false);
                                     return;
                                 }
 
@@ -142,7 +180,7 @@ export class SheetDrawingPermissionController extends Disposable {
                                     .every((permission) => permission.value);
 
                                 if (worksheetEditPermission) {
-                                    this._drawingManagerService.setDrawingEditable(true);
+                                    this._sheetDrawingService.setDrawingEditable(true);
                                 } else {
                                     this._handleDrawingEditableFalse(workbook, sheet);
                                 }
@@ -155,14 +193,14 @@ export class SheetDrawingPermissionController extends Disposable {
     }
 
     private _handleDrawingEditableFalse(workbook: Workbook, sheet: Worksheet) {
-        this._drawingManagerService.setDrawingEditable(false);
+        this._sheetDrawingService.setDrawingEditable(false);
 
         const unitId = workbook.getUnitId();
         const subUnitId = sheet.getSheetId();
-        const drawingData = this._drawingManagerService.getDrawingData(unitId, subUnitId);
+        const drawingData = this._sheetDrawingService.getDrawingData(unitId, subUnitId);
         const drawingDataValues = Object.values(drawingData);
 
-        const renderObject = this._renderManagerService.getRenderById(unitId);
+        const renderObject = this._renderManagerService.getRenderUnitById(unitId);
         const scene = renderObject?.scene;
 
         if (!scene) {
@@ -173,7 +211,7 @@ export class SheetDrawingPermissionController extends Disposable {
 
         objects.forEach((object) => {
             if (
-                object.classType === RENDER_CLASS_TYPE.IMAGE &&
+                drawingObjectTypes.includes(object.objectType) &&
                 drawingDataValues.some((item) => object.oKey.includes(item.drawingId))
             ) {
                 scene.detachTransformerFrom(object);
@@ -181,6 +219,7 @@ export class SheetDrawingPermissionController extends Disposable {
         });
     }
 
+    // eslint-disable-next-line max-lines-per-function
     private _initViewPermissionChange() {
         const workbook$ = this._univerInstanceService.getCurrentTypeOfUnit$<Workbook>(UniverInstanceType.UNIVER_SHEET);
         const currentUser$ = this._userManagerService.currentUser$;
@@ -198,7 +237,7 @@ export class SheetDrawingPermissionController extends Disposable {
 
                                 const unitId = workbook.getUnitId();
                                 const subUnitId = sheet.getSheetId();
-                                const renderObject = this._renderManagerService.getRenderById(unitId);
+                                const renderObject = this._renderManagerService.getRenderUnitById(unitId);
                                 const scene = renderObject?.scene;
 
                                 if (!scene) {
@@ -232,18 +271,18 @@ export class SheetDrawingPermissionController extends Disposable {
                 )
                 .subscribe({
                     next: ({ permission, scene, transformer, unitId, subUnitId }) => {
-                        this._drawingManagerService.setDrawingVisible(permission);
+                        this._sheetDrawingService.setDrawingVisible(permission);
 
                         const objects = scene.getAllObjectsByOrder();
-                        const drawingData = this._drawingManagerService.getDrawingData(unitId, subUnitId);
+                        const drawingData = this._sheetDrawingService.getDrawingData(unitId, subUnitId);
                         const drawingDataValues = Object.values(drawingData);
 
                         if (permission) {
-                            this._drawingManagerService.addNotification(drawingDataValues);
+                            this._sheetDrawingService.addNotification(drawingDataValues);
                         } else {
                             objects.forEach((object) => {
                                 if (
-                                    object.classType === RENDER_CLASS_TYPE.IMAGE &&
+                                    drawingObjectTypes.includes(object.objectType) &&
                                     drawingDataValues.some((item) => object.oKey.includes(item.drawingId))
                                 ) {
                                     scene.removeObject(object);
@@ -253,22 +292,23 @@ export class SheetDrawingPermissionController extends Disposable {
                         }
                     },
                     complete: () => {
-                        this._drawingManagerService.setDrawingVisible(true);
-                        const workbook = this._univerInstanceService.getCurrentUnitForType<Workbook>(UniverInstanceType.UNIVER_SHEET);
+                        this._sheetDrawingService.setDrawingVisible(true);
+                        const workbook = this._univerInstanceService.getCurrentUnitOfType<Workbook>(UniverInstanceType.UNIVER_SHEET);
                         const sheet = workbook?.getActiveSheet();
                         const unitId = workbook?.getUnitId();
                         const subUnitId = sheet?.getSheetId();
                         if (!unitId || !subUnitId) {
                             return;
                         }
-                        const drawingData = this._drawingManagerService.getDrawingData(unitId, subUnitId);
+                        const drawingData = this._sheetDrawingService.getDrawingData(unitId, subUnitId);
                         const drawingDataValues = Object.values(drawingData);
-                        this._drawingManagerService.addNotification(drawingDataValues);
+                        this._sheetDrawingService.addNotification(drawingDataValues);
                     },
                 })
         );
     }
 
+    // eslint-disable-next-line max-lines-per-function
     private _initEditPermissionChange() {
         const workbook$ = this._univerInstanceService.getCurrentTypeOfUnit$<Workbook>(UniverInstanceType.UNIVER_SHEET);
         const currentUser$ = this._userManagerService.currentUser$;
@@ -289,7 +329,7 @@ export class SheetDrawingPermissionController extends Disposable {
 
                                 const unitId = workbook.getUnitId();
                                 const subUnitId = sheet.getSheetId();
-                                const renderObject = this._renderManagerService.getRenderById(unitId);
+                                const renderObject = this._renderManagerService.getRenderUnitById(unitId);
                                 const scene = renderObject?.scene;
 
                                 if (!scene) {
@@ -323,27 +363,27 @@ export class SheetDrawingPermissionController extends Disposable {
                 )
                 .subscribe({
                     next: ({ permission, scene, transformer, unitId, subUnitId }) => {
-                        this._drawingManagerService.setDrawingEditable(permission);
+                        this._sheetDrawingService.setDrawingEditable(permission);
 
                         const objects = scene.getAllObjectsByOrder();
-                        const drawingData = this._drawingManagerService.getDrawingData(unitId, subUnitId);
+                        const drawingData = this._sheetDrawingService.getDrawingData(unitId, subUnitId);
                         const drawingDataValues = Object.values(drawingData);
 
                         if (permission) {
                             objects.forEach((object) => {
                                 if (
-                                    object.classType === RENDER_CLASS_TYPE.IMAGE &&
+                                    drawingObjectTypes.includes(object.objectType) &&
                                     drawingDataValues.some((item) => object.oKey.includes(item.drawingId))
                                 ) {
                                     scene.attachTransformerTo(object);
                                 }
                             });
 
-                            this._drawingManagerService.addNotification(drawingDataValues);
+                            this._sheetDrawingService.addNotification(drawingDataValues);
                         } else {
                             objects.forEach((object) => {
                                 if (
-                                    object.classType === RENDER_CLASS_TYPE.IMAGE &&
+                                    drawingObjectTypes.includes(object.objectType) &&
                                     drawingDataValues.some((item) => object.oKey.includes(item.drawingId))
                                 ) {
                                     scene.detachTransformerFrom(object);
@@ -354,7 +394,7 @@ export class SheetDrawingPermissionController extends Disposable {
                         }
                     },
                     complete: () => {
-                        const workbook = this._univerInstanceService.getCurrentUnitForType<Workbook>(UniverInstanceType.UNIVER_SHEET);
+                        const workbook = this._univerInstanceService.getCurrentUnitOfType<Workbook>(UniverInstanceType.UNIVER_SHEET);
                         if (!workbook) {
                             return;
                         }
@@ -366,22 +406,22 @@ export class SheetDrawingPermissionController extends Disposable {
                         }
 
                         const subUnitId = sheet.getSheetId();
-                        const renderObject = this._renderManagerService.getRenderById(unitId);
+                        const renderObject = this._renderManagerService.getRenderUnitById(unitId);
                         const scene = renderObject?.scene;
 
                         if (!scene) {
                             return;
                         }
 
-                        const drawingData = this._drawingManagerService.getDrawingData(unitId, subUnitId);
+                        const drawingData = this._sheetDrawingService.getDrawingData(unitId, subUnitId);
                         const drawingDataValues = Object.values(drawingData);
 
-                        this._drawingManagerService.setDrawingEditable(true);
+                        this._sheetDrawingService.setDrawingEditable(true);
 
                         const objects = scene.getAllObjectsByOrder();
                         objects.forEach((object) => {
                             if (
-                                object.classType === RENDER_CLASS_TYPE.IMAGE &&
+                                drawingObjectTypes.includes(object.objectType) &&
                                 drawingDataValues.some((item) => object.oKey.includes(item.drawingId))
                             ) {
                                 scene.detachTransformerFrom(object);
@@ -391,4 +431,57 @@ export class SheetDrawingPermissionController extends Disposable {
                 })
         );
     }
+
+    private _initCommandPermissionCheck() {
+        this.disposeWithMe(
+            this._commandService.beforeCommandExecuted((command) => {
+                let unitId: string | undefined;
+                let subUnitId: string | undefined;
+
+                if (command.id === InsertSheetDrawingCommand.id || command.id === RemoveSheetDrawingCommand.id || command.id === SetSheetDrawingCommand.id) {
+                    const params = command.params as IInsertSheetDrawingCommandParams | IRemoveSheetDrawingCommandParams | ISetDrawingCommandParams;
+                    const { drawings } = params;
+                    unitId = drawings?.[0]?.unitId;
+                    subUnitId = drawings?.[0]?.subUnitId;
+                } else if (command.id === SetSheetDrawingPlacementCommand.id) {
+                    const target = getPlacementCommandTarget(command.params);
+                    unitId = target.unitId;
+                    subUnitId = target.subUnitId;
+                } else if (command.id === SetDrawingArrangeCommand.id) {
+                    const params = command.params as ISetDrawingArrangeCommandParams;
+                    unitId = params.unitId;
+                    subUnitId = params.subUnitId;
+                }
+
+                if (!unitId || !subUnitId) {
+                    return;
+                }
+
+                const permission = this._sheetPermissionCheckController.permissionCheckWithoutRange({
+                    workbookTypes: [WorkbookEditablePermission],
+                    worksheetTypes: [WorksheetEditPermission],
+                }, unitId, subUnitId);
+                if (!permission) {
+                    this._sheetPermissionCheckController.blockExecuteWithoutPermission(this._localeService.t<LocaleKey>('sheets-drawing-ui.permission.dialog.editErr'));
+                }
+            })
+        );
+    }
+}
+
+function getPlacementCommandTarget(params: object | undefined): {
+    unitId?: string;
+    subUnitId?: string;
+} {
+    if (!params) {
+        return {};
+    }
+
+    const unitId = 'unitId' in params && typeof params.unitId === 'string'
+        ? params.unitId
+        : undefined;
+    const subUnitId = 'subUnitId' in params && typeof params.subUnitId === 'string'
+        ? params.subUnitId
+        : undefined;
+    return { unitId, subUnitId };
 }

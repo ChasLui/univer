@@ -17,19 +17,28 @@
 import type { IStyleData, Nullable } from '@univerjs/core';
 import type { IAverageHighlightCell, IFormulaHighlightCell, IHighlightCell, INumberHighlightCell, IRankHighlightCell, ITextHighlightCell, ITimePeriodHighlightCell } from '../type';
 import type { IContext } from './base-calculate-unit';
-import { CellValueType, dayjs, Range, Tools } from '@univerjs/core';
+import { CellValueType, dateKit, Range, Tools } from '@univerjs/core';
 import { ERROR_TYPE_SET, FormulaResultStatus } from '@univerjs/engine-formula';
 import { CFNumberOperator, CFSubRuleType, CFTextOperator, CFTimePeriodOperator } from '../../base/const';
 import { ConditionalFormattingFormulaService } from '../../services/conditional-formatting-formula.service';
 import { BaseCalculateUnit, CalculateEmitStatus } from './base-calculate-unit';
 import { compareWithNumber, filterRange, getCellValue, isFloatsEqual, isNullable, serialTimeToTimestamp } from './utils';
 
-;
-
 interface IConfig {
     value: any;
     type: CFSubRuleType;
 }
+
+const isFormulaResultMatched = (value: unknown) => value === true || value === 1 || value === 'TRUE';
+
+const sortRangesByTopLeft = <T extends { startRow: number; startColumn: number }>(ranges: T[]) => [...ranges].sort((a, b) => {
+    if (a.startRow !== b.startRow) {
+        return a.startRow - b.startRow;
+    }
+
+    return a.startColumn - b.startColumn;
+});
+
 export class HighlightCellCalculateUnit extends BaseCalculateUnit<Nullable<IConfig>, Nullable<IStyleData>> {
     // eslint-disable-next-line max-lines-per-function
     override preComputing(row: number, col: number, context: IContext): void {
@@ -44,8 +53,8 @@ export class HighlightCellCalculateUnit extends BaseCalculateUnit<Nullable<IConf
                     ranges.forEach((range) => {
                         Range.foreach(range, (row, col) => {
                             const cell = context.getCellValue(row, col);
-                            const v = getCellValue(cell || undefined);
-                            if (cell && cell.t === CellValueType.NUMBER && v !== undefined) {
+                            const v = getCellValue(cell);
+                            if (cell && cell.t === CellValueType.NUMBER && !isNullable(v)) {
                                 sum += Number(v) || 0;
                                 count++;
                             }
@@ -59,8 +68,8 @@ export class HighlightCellCalculateUnit extends BaseCalculateUnit<Nullable<IConf
                     ranges.forEach((range) => {
                         Range.foreach(range, (row, col) => {
                             const cell = context.getCellValue(row, col);
-                            const v = getCellValue(cell || undefined);
-                            if (v !== undefined) {
+                            const v = getCellValue(cell);
+                            if (!isNullable(v)) {
                                 const cache = cacheMap.get(v);
                                 if (cache) {
                                     cacheMap.set(v, cache + 1);
@@ -77,8 +86,8 @@ export class HighlightCellCalculateUnit extends BaseCalculateUnit<Nullable<IConf
                     ranges.forEach((range) => {
                         Range.foreach(range, (row, col) => {
                             const cell = context.getCellValue(row, col);
-                            const v = getCellValue(cell || undefined);
-                            if (cell && cell.t === CellValueType.NUMBER && v !== undefined) {
+                            const v = getCellValue(cell);
+                            if (cell && cell.t === CellValueType.NUMBER && !isNullable(v)) {
                                 allValue.push(Number(v) || 0);
                             }
                         });
@@ -87,7 +96,7 @@ export class HighlightCellCalculateUnit extends BaseCalculateUnit<Nullable<IConf
                     const configRule = context.rule.rule as IRankHighlightCell;
                     if (configRule.isPercent) {
                         if (configRule.isBottom) {
-                            allValue = allValue.toReversed();
+                            allValue = allValue.slice().reverse();
                         }
 
                         // Calculate the index directly based on the threshold percentage.
@@ -108,7 +117,8 @@ export class HighlightCellCalculateUnit extends BaseCalculateUnit<Nullable<IConf
                 case CFSubRuleType.formula: {
                     const _ruleConfig = ruleConfig as IFormulaHighlightCell;
                     const conditionalFormattingFormulaService = context.accessor.get(ConditionalFormattingFormulaService);
-                    conditionalFormattingFormulaService.registerFormulaWithRange(context.unitId, context.subUnitId, context.rule.cfId, _ruleConfig.value, context.rule.ranges);
+                    const normalizedRanges = sortRangesByTopLeft(context.rule.ranges);
+                    conditionalFormattingFormulaService.registerFormulaWithRange(context.unitId, context.subUnitId, context.rule.cfId, _ruleConfig.value, normalizedRanges);
                     const result = conditionalFormattingFormulaService.getFormulaMatrix(context.unitId, context.subUnitId, context.rule.cfId, _ruleConfig.value);
                     if (result && result.status === FormulaResultStatus.SUCCESS) {
                         this._preComputingStatus$.next(CalculateEmitStatus.preComputingEnd);
@@ -127,8 +137,8 @@ export class HighlightCellCalculateUnit extends BaseCalculateUnit<Nullable<IConf
                         case CFTimePeriodOperator.last7Days: {
                             return {
                                 value: {
-                                    start: dayjs().subtract(7, 'day').valueOf(),
-                                    end: dayjs().valueOf(),
+                                    start: dateKit().subtract(7, 'day').valueOf(),
+                                    end: dateKit().valueOf(),
                                 },
                                 type: ruleConfig.subType,
                             };
@@ -136,8 +146,8 @@ export class HighlightCellCalculateUnit extends BaseCalculateUnit<Nullable<IConf
                         case CFTimePeriodOperator.lastMonth: {
                             return {
                                 value: {
-                                    start: dayjs().startOf('month').subtract(1, 'month').valueOf(),
-                                    end: dayjs().endOf('month').subtract(1, 'month').valueOf(),
+                                    start: dateKit().startOf('month').subtract(1, 'month').valueOf(),
+                                    end: dateKit().endOf('month').subtract(1, 'month').valueOf(),
                                 },
                                 type: ruleConfig.subType,
                             };
@@ -145,8 +155,8 @@ export class HighlightCellCalculateUnit extends BaseCalculateUnit<Nullable<IConf
                         case CFTimePeriodOperator.lastWeek: {
                             return {
                                 value: {
-                                    start: dayjs().startOf('week').subtract(1, 'week').valueOf(),
-                                    end: dayjs().endOf('week').subtract(1, 'week').valueOf(),
+                                    start: dateKit().startOf('week').subtract(1, 'week').valueOf(),
+                                    end: dateKit().endOf('week').subtract(1, 'week').valueOf(),
                                 },
                                 type: ruleConfig.subType,
                             };
@@ -154,8 +164,8 @@ export class HighlightCellCalculateUnit extends BaseCalculateUnit<Nullable<IConf
                         case CFTimePeriodOperator.nextMonth: {
                             return {
                                 value: {
-                                    start: dayjs().startOf('month').add(1, 'month').valueOf(),
-                                    end: dayjs().endOf('month').add(1, 'month').valueOf(),
+                                    start: dateKit().startOf('month').add(1, 'month').valueOf(),
+                                    end: dateKit().endOf('month').add(1, 'month').valueOf(),
                                 },
                                 type: ruleConfig.subType,
                             };
@@ -163,8 +173,8 @@ export class HighlightCellCalculateUnit extends BaseCalculateUnit<Nullable<IConf
                         case CFTimePeriodOperator.nextWeek: {
                             return {
                                 value: {
-                                    start: dayjs().startOf('week').add(1, 'week').valueOf(),
-                                    end: dayjs().endOf('week').add(1, 'week').valueOf(),
+                                    start: dateKit().startOf('week').add(1, 'week').valueOf(),
+                                    end: dateKit().endOf('week').add(1, 'week').valueOf(),
                                 },
                                 type: ruleConfig.subType,
                             };
@@ -172,8 +182,8 @@ export class HighlightCellCalculateUnit extends BaseCalculateUnit<Nullable<IConf
                         case CFTimePeriodOperator.thisMonth: {
                             return {
                                 value: {
-                                    start: dayjs().startOf('month').valueOf(),
-                                    end: dayjs().endOf('month').valueOf(),
+                                    start: dateKit().startOf('month').valueOf(),
+                                    end: dateKit().endOf('month').valueOf(),
                                 },
                                 type: ruleConfig.subType,
                             };
@@ -181,8 +191,8 @@ export class HighlightCellCalculateUnit extends BaseCalculateUnit<Nullable<IConf
                         case CFTimePeriodOperator.thisWeek: {
                             return {
                                 value: {
-                                    start: dayjs().startOf('week').valueOf(),
-                                    end: dayjs().endOf('week').valueOf(),
+                                    start: dateKit().startOf('week').valueOf(),
+                                    end: dateKit().endOf('week').valueOf(),
                                 },
                                 type: ruleConfig.subType,
                             };
@@ -190,8 +200,8 @@ export class HighlightCellCalculateUnit extends BaseCalculateUnit<Nullable<IConf
                         case CFTimePeriodOperator.today: {
                             return {
                                 value: {
-                                    start: dayjs().startOf('day').valueOf(),
-                                    end: dayjs().endOf('day').valueOf(),
+                                    start: dateKit().startOf('day').valueOf(),
+                                    end: dateKit().endOf('day').valueOf(),
                                 },
                                 type: ruleConfig.subType,
                             };
@@ -199,8 +209,8 @@ export class HighlightCellCalculateUnit extends BaseCalculateUnit<Nullable<IConf
                         case CFTimePeriodOperator.tomorrow: {
                             return {
                                 value: {
-                                    start: dayjs().startOf('day').add(1, 'day').valueOf(),
-                                    end: dayjs().endOf('day').add(1, 'day').valueOf(),
+                                    start: dateKit().startOf('day').add(1, 'day').valueOf(),
+                                    end: dateKit().endOf('day').add(1, 'day').valueOf(),
                                 },
                                 type: ruleConfig.subType,
                             };
@@ -208,8 +218,8 @@ export class HighlightCellCalculateUnit extends BaseCalculateUnit<Nullable<IConf
                         case CFTimePeriodOperator.yesterday: {
                             return {
                                 value: {
-                                    start: dayjs().startOf('day').subtract(1, 'day').valueOf(),
-                                    end: dayjs().endOf('day').subtract(1, 'day').valueOf(),
+                                    start: dateKit().startOf('day').subtract(1, 'day').valueOf(),
+                                    end: dateKit().endOf('day').subtract(1, 'day').valueOf(),
                                 },
                                 type: ruleConfig.subType,
                             };
@@ -248,8 +258,8 @@ export class HighlightCellCalculateUnit extends BaseCalculateUnit<Nullable<IConf
                 }
                 case CFSubRuleType.text: {
                     const subRuleConfig = ruleConfig as ITextHighlightCell;
-                    const value = getCellValue(cellValue!);
-                    const v = value === null ? '' : String(value);
+                    const value = getCellValue(cellValue);
+                    const v = isNullable(value) ? '' : String(value);
                     const condition = subRuleConfig.value || '';
                     switch (subRuleConfig.operator) {
                         case CFTextOperator.beginsWith: {
@@ -288,11 +298,11 @@ export class HighlightCellCalculateUnit extends BaseCalculateUnit<Nullable<IConf
                     }
                 }
                 case CFSubRuleType.timePeriod: {
-                    const value = getCellValue(cellValue!);
+                    const value = getCellValue(cellValue);
                     if (isNullable(value) || Number.isNaN(Number(value)) || cellValue?.t !== CellValueType.NUMBER || !preComputingResult) {
                         return;
                     }
-                    const v = serialTimeToTimestamp(Number(value));
+                    const v = serialTimeToTimestamp(Number(value), context.workbook.getDateSystem());
                     const { start, end } = preComputingResult.value!;
                     return v >= start && v <= end;
                 }
@@ -340,7 +350,7 @@ export class HighlightCellCalculateUnit extends BaseCalculateUnit<Nullable<IConf
                     }
                 }
                 case CFSubRuleType.rank: {
-                    const value = getCellValue(cellValue!);
+                    const value = getCellValue(cellValue);
 
                     const v = Number(value);
 
@@ -357,7 +367,7 @@ export class HighlightCellCalculateUnit extends BaseCalculateUnit<Nullable<IConf
                     }
                 }
                 case CFSubRuleType.uniqueValues: {
-                    const value = getCellValue(cellValue!);
+                    const value = getCellValue(cellValue);
 
                     if (isNullable(value) || !preComputingResult) {
                         return false;
@@ -366,25 +376,41 @@ export class HighlightCellCalculateUnit extends BaseCalculateUnit<Nullable<IConf
                     return uniqueCache.get(value) === 1;
                 }
                 case CFSubRuleType.duplicateValues: {
-                    const value = getCellValue(cellValue!);
+                    const value = getCellValue(cellValue);
 
                     if (isNullable(value) || !preComputingResult) {
                         return false;
                     }
-                    const uniqueCache = preComputingResult.value;
-                    return uniqueCache.get(value) !== 1;
+                    const uniqueCacheValue = preComputingResult.value.get(value);
+
+                    return uniqueCacheValue && uniqueCacheValue !== 1;
                 }
                 case CFSubRuleType.formula: {
-                    // const _ruleConfig = ruleConfig as IFormulaHighlightCell;
+                    const _ruleConfig = ruleConfig as IFormulaHighlightCell;
+                    const conditionalFormattingFormulaService = context.accessor.get(ConditionalFormattingFormulaService);
+
+                    // The formula engine stores results at relative offsets from the first range's top-left.
+                    const firstRange = sortRangesByTopLeft(context.rule.ranges)[0];
+                    const relativeRow = row - firstRange.startRow;
+                    const relativeCol = col - firstRange.startColumn;
+
+                    const formulaResult = conditionalFormattingFormulaService.getFormulaResultWithCoords(
+                        context.unitId,
+                        context.subUnitId,
+                        context.rule.cfId,
+                        _ruleConfig.value,
+                        relativeRow,
+                        relativeCol
+                    );
+
+                    if (formulaResult.status === FormulaResultStatus.SUCCESS && formulaResult.result !== undefined) {
+                        return isFormulaResultMatched(formulaResult.result);
+                    }
+
                     const cache = preComputingResult?.value;
                     if (cache) {
-                        // The formula result matrix starts from (0,0), but we need to use relative coordinates
-                        // based on the first range's start position
-                        const firstRange = context.rule.ranges[0];
-                        const relativeRow = row - firstRange.startRow;
-                        const relativeCol = col - firstRange.startColumn;
                         const value = cache.getValue(relativeRow, relativeCol);
-                        return value === true;
+                        return isFormulaResultMatched(value);
                     }
                     return false;
                 }
